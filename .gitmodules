@@ -1,0 +1,3 @@
+[submodule "FidelityFX-SDK-Linux"]
+	path = FidelityFX-SDK-Linux
+	url = https://github.com/DethRaid/FidelityFX-SDK-Linux

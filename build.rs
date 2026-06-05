@@ -43,6 +43,8 @@ fn main() {
     let sdk_inc = sdk.join("include");
     let wrapper_h = std::env::current_dir().unwrap().join("wrapper.h");
 
+    use bindgen::EnumVariation;
+
     let bindgen_builder = bindgen::Builder::default()
         .header(wrapper_h.to_str().unwrap())
         .clang_arg("-xc++")
@@ -56,6 +58,8 @@ fn main() {
         .clang_arg("-DVK_NO_PROTOTYPES")
         .clang_arg("-DFFX_FSR3UPSCALER")
         .clang_arg("-DFFX_FSR2")
+        .default_enum_style(EnumVariation::Rust { non_exhaustive: false })
+        .constified_enum_module("FfxResourceUsage|FfxResourceStates|FfxBindStage|FfxFsr3UpscalerInitializationFlagBits|FfxFsr2InitializationFlagBits|FfxOpticalflowInitializationFlagBits|FfxFsr3UpscalerDispatchFlags|FfxResourceFlags")
         .derive_default(true)
         .generate_comments(false);
 

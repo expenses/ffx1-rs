@@ -1,3 +1,6 @@
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <FidelityFX/host/ffx_types.h>
 #include <FidelityFX/host/ffx_error.h>
 #include <FidelityFX/host/ffx_interface.h>

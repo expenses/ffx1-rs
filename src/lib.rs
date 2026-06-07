@@ -66,6 +66,8 @@ pub fn ok_or_error(code: i32) -> Result<(), FfxError> {
 
 #[derive(Debug)]
 pub struct UpscalerContext {
+    // Boxed because the opaque context struct is ~838 KB on x64
+    // (FFX_SDK_DEFAULT_CONTEXT_SIZE = 837848 / 4 u32s).
     inner: Box<ffi::FfxFsr3UpscalerContext>,
 }
 
@@ -132,9 +134,104 @@ impl Drop for UpscalerContext {
     }
 }
 
-#[inline]
-pub fn jitter_phase_count(render_width: i32, display_width: i32) -> i32 {
-    unsafe { ffi::ffxFsr3UpscalerGetJitterPhaseCount(render_width, display_width) }
+/// A RAII wrapper around an `FfxDevice` obtained from a [`VkDeviceContext`].
+///
+/// The Vulkan backend stores a single global copy of the `VkDeviceContext`, so
+/// creating multiple `Device`s will silently overwrite that global. No
+/// destructor is needed — the application owns the Vulkan device lifetime.
+pub struct Device {
+    raw: ffi::FfxDevice,
+    physical_device: ffi::VkPhysicalDevice,
+}
+
+impl Device {
+    /// Creates a new device from a [`VkDeviceContext`].
+    ///
+    /// # Safety
+    ///
+    /// - `ctx` must contain valid Vulkan handles.
+    /// - The backend's global device state will be overwritten.
+    pub unsafe fn new(ctx: &mut ffi::VkDeviceContext) -> Result<Self, &'static str> {
+        let raw = unsafe { ffi::ffxGetDeviceVK(ctx as *mut _) };
+        if raw.is_null() {
+            Err("ffxGetDeviceVK returned null")
+        } else {
+            Ok(Self { raw, physical_device: ctx.vkPhysicalDevice })
+        }
+    }
+
+    pub fn as_raw(&self) -> ffi::FfxDevice {
+        self.raw
+    }
+}
+
+/// A RAII wrapper around a VK backend [`FfxInterface`] and its scratch buffer.
+///
+/// The scratch buffer must outlive any effect context created from this
+/// interface, because the [`FfxInterface`] stores a raw pointer into it.
+/// Rust's drop order guarantees this when the [`BackendInterface`] is held
+/// alive for the duration of the effect context's use.
+pub struct BackendInterface {
+    inner: ffi::FfxInterface,
+    _scratch: Vec<u8>,
+}
+
+impl BackendInterface {
+    /// Creates a new backend interface.
+    ///
+    /// # Safety
+    ///
+    /// `device` must outlive this interface.
+    pub unsafe fn new(
+        device: &Device,
+        max_contexts: usize,
+    ) -> Result<Self, FfxError> {
+        let scratch_size =
+            unsafe { ffi::ffxGetScratchMemorySizeVK(device.physical_device, max_contexts) };
+        let mut scratch = vec![0u8; scratch_size];
+        let mut interface = ffi::FfxInterface::default();
+        let code = unsafe {
+            ffi::ffxGetInterfaceVK(
+                &mut interface,
+                device.raw,
+                scratch.as_mut_ptr() as *mut _,
+                scratch_size,
+                max_contexts,
+            )
+        };
+        ok_or_error(code)?;
+        Ok(Self {
+            inner: interface,
+            _scratch: scratch,
+        })
+    }
+
+    pub fn as_ref(&self) -> &ffi::FfxInterface {
+        &self.inner
+    }
+
+    pub fn as_mut_ptr(&mut self) -> *mut ffi::FfxInterface {
+        &mut self.inner
+    }
+
+    /// Creates an [`UpscalerContext`] from this backend interface.
+    ///
+    /// The [`BackendInterface`] must outlive the returned [`UpscalerContext`].
+    pub fn create_upscaler(
+        &self,
+        flags: u32,
+        render_size: Dimensions2D,
+        upscale_size: Dimensions2D,
+    ) -> Result<UpscalerContext, FfxError> {
+        let desc = UpscalerContextDescription {
+            flags,
+            maxRenderSize: render_size,
+            maxUpscaleSize: upscale_size,
+            fpMessage: None,
+            backendInterface: *self.as_ref(),
+        };
+        UpscalerContext::create(&desc)
+    }
 }
 
 #[inline]
@@ -145,11 +242,6 @@ pub fn jitter_offset(index: i32, phase_count: i32) -> (f32, f32) {
         ffi::ffxFsr3UpscalerGetJitterOffset(&mut x, &mut y, index, phase_count);
     }
     (x, y)
-}
-
-#[inline]
-pub fn upscale_ratio_from_quality_mode(mode: UpscalerQualityMode) -> f32 {
-    unsafe { ffi::ffxFsr3UpscalerGetUpscaleRatioFromQualityMode(mode) }
 }
 
 #[inline]
@@ -171,103 +263,6 @@ pub fn render_resolution_from_quality_mode(
     })?;
     Ok((w, h))
 }
-
-#[inline]
-pub fn is_resource_null(resource: ffi::FfxResource) -> bool {
-    unsafe { ffi::ffxFsr3UpscalerResourceIsNull(resource) }
-}
-
-pub unsafe fn scratch_memory_size(
-    physical_device: ffi::VkPhysicalDevice,
-    max_contexts: usize,
-) -> usize {
-    unsafe { ffi::ffxGetScratchMemorySizeVK(physical_device, max_contexts) }
-}
-
-pub unsafe fn get_device(ctx: *mut ffi::VkDeviceContext) -> ffi::FfxDevice {
-    unsafe { ffi::ffxGetDeviceVK(ctx) }
-}
-
-pub unsafe fn get_interface(
-    backend_interface: *mut ffi::FfxInterface,
-    device: ffi::FfxDevice,
-    scratch_buffer: *mut std::ffi::c_void,
-    scratch_buffer_size: usize,
-    max_contexts: usize,
-) -> i32 {
-    unsafe {
-        ffi::ffxGetInterfaceVK(
-            backend_interface,
-            device,
-            scratch_buffer,
-            scratch_buffer_size,
-            max_contexts,
-        )
-    }
-}
-
-pub unsafe fn get_command_list(cmd_buf: ffi::VkCommandBuffer) -> ffi::FfxCommandList {
-    unsafe { ffi::ffxGetCommandListVK(cmd_buf) }
-}
-
-pub unsafe fn get_resource(
-    vk_resource: *mut std::ffi::c_void,
-    description: ffi::FfxResourceDescription,
-    name: *const u32,
-    state: u32,
-) -> ffi::FfxResource {
-    unsafe { ffi::ffxGetResourceVK(vk_resource, description, name, state) }
-}
-
-// pub fn create_interface(
-//     physical_device: ffi::VkPhysicalDevice,
-//     vk_device: ffi::VkDevice,
-//     device_proc_addr: ffi::PFN_vkGetDeviceProcAddr,
-//     instance_table: ffi::VkInstanceFunctionTableFFX,
-//     max_contexts: usize,
-// ) -> Result<(ffi::FfxInterface, Vec<u8>), super::FfxError> {
-//     let scratch_size = scratch_memory_size(physical_device, max_contexts);
-//     let mut scratch = vec![0u8; scratch_size];
-
-//     let mut ctx = ffi::VkDeviceContext {
-//         vkDevice: vk_device,
-//         vkPhysicalDevice: physical_device,
-//         vkDeviceProcAddr: device_proc_addr,
-//         instanceFunctions: instance_table,
-//     };
-
-//     let device = unsafe { get_device(&mut ctx) };
-//     if device.is_null() {
-//         return Err(super::FfxError(ffi::FfxErrorCodes::FFX_ERROR_INVALID_POINTER as i32));
-//     }
-
-//     let mut interface = ffi::FfxInterface::default();
-//     let code = unsafe {
-//         get_interface(&mut interface, device, scratch.as_mut_ptr() as *mut _, scratch_size, max_contexts)
-//     };
-//     if code != super::FFX_OK { Err(super::FfxError(code)) } else { Ok((interface, scratch)) }
-// }
-
-// pub fn create_upscaler(
-//     physical_device: ffi::VkPhysicalDevice,
-//     vk_device: ffi::VkDevice,
-//     device_proc_addr: ffi::PFN_vkGetDeviceProcAddr,
-//     instance_table: ffi::VkInstanceFunctionTableFFX,
-//     flags: u32,
-//     render_size: super::Dimensions2D,
-//     upscale_size: super::Dimensions2D,
-// ) -> Result<(super::UpscalerContext, Vec<u8>), super::FfxError> {
-//     let (interface, scratch) = create_interface(physical_device, vk_device, device_proc_addr, instance_table, 1)?;
-//     let desc = super::UpscalerContextDescription {
-//         flags,
-//         maxRenderSize: render_size,
-//         maxUpscaleSize: upscale_size,
-//         fpMessage: None,
-//         backendInterface: interface,
-//     };
-//     let ctx = super::UpscalerContext::create(&desc)?;
-//     Ok((ctx, scratch))
-// }
 
 #[cfg(test)]
 mod tests {
@@ -321,5 +316,11 @@ mod tests {
     fn vk_types_exist() {
         let _ = ffi::VkDeviceContext::default();
         let _ = ffi::VkInstanceFunctionTableFFX::default();
+    }
+
+    #[test]
+    fn raii_types_compile() {
+        let _ = ffi::FfxDevice::default();
+        let _ = ffi::FfxInterface::default();
     }
 }

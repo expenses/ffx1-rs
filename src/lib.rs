@@ -203,13 +203,12 @@ impl BackendInterface {
         let scratch_size =
             unsafe { ffi::ffxGetScratchMemorySizeVK(device.physical_device, max_contexts) };
         // Overallocate by 8 so we can shift for alignment.
-        let mut scratch = vec![0u8; scratch_size + 8];
-        let base_ptr = scratch.as_mut_ptr() as usize;
+        let scratch = vec![0u8; scratch_size + 8];
         // sizeof(BackendContext_VK) % 16 == 8, so the scratch pointer must
         // satisfy ptr % 16 == 8 to make pGpuJobs 16-byte aligned.
         let scratch_ptr = unsafe {
             scratch
-                .as_mut_ptr()
+                .as_ptr()
                 .add(scratch.as_ptr().add(8).align_offset(16))
         };
         let mut interface = ffi::FfxInterface::default();
@@ -395,10 +394,24 @@ mod tests {
             .queue_family_index(qfi as u32)
             .queue_priorities(&[1.0]);
         let queue_create_infos = [queue_info];
-        let extension_names = [
+
+        let ext_props = unsafe { instance.enumerate_device_extension_properties(physical_device) }
+            .unwrap_or_default();
+        let amd_coherent = ext_props.iter().any(|e| {
+            e.extension_name_as_c_str()
+                .is_ok_and(|name| name == ash::amd::device_coherent_memory::NAME)
+        });
+
+        let mut extension_names = vec![
             ash::khr::get_memory_requirements2::NAME.as_ptr(),
             ash::khr::dedicated_allocation::NAME.as_ptr(),
         ];
+        let mut amd_coherent_features = ash::vk::PhysicalDeviceCoherentMemoryFeaturesAMD::default();
+        if amd_coherent {
+            extension_names.push(ash::amd::device_coherent_memory::NAME.as_ptr());
+            amd_coherent_features.device_coherent_memory = 1;
+        }
+
         let mut features12 =
             ash::vk::PhysicalDeviceVulkan12Features::default().shader_float16(true);
         let features = ash::vk::PhysicalDeviceFeatures::default().shader_int16(true);
@@ -406,6 +419,7 @@ mod tests {
             .queue_create_infos(&queue_create_infos)
             .enabled_extension_names(&extension_names)
             .push_next(&mut features12)
+            .push_next(&mut amd_coherent_features)
             .enabled_features(&features);
         let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
             .expect("create_device");
@@ -418,17 +432,21 @@ mod tests {
         let backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
 
         {
-            let _upscaler = backend.create_upscaler(
-                FfxFsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
-                Dimensions2D {
-                    width: 1280,
-                    height: 720,
-                },
-                Dimensions2D {
-                    width: 1280,
-                    height: 720,
-                },
-            );
+            let mut upscaler = backend
+                .create_upscaler(
+                    FfxFsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
+                    Dimensions2D {
+                        width: 1280,
+                        height: 720,
+                    },
+                    Dimensions2D {
+                        width: 1280,
+                        height: 720,
+                    },
+                )
+                .unwrap();
+
+            dbg!(upscaler.gpu_memory_usage().unwrap());
         }
 
         unsafe { device.destroy_device(None) };

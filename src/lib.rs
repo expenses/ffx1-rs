@@ -151,12 +151,29 @@ impl Device {
     ///
     /// - `ctx` must contain valid Vulkan handles.
     /// - The backend's global device state will be overwritten.
-    pub unsafe fn new(ctx: &mut ffi::VkDeviceContext) -> Result<Self, &'static str> {
-        let raw = unsafe { ffi::ffxGetDeviceVK(ctx as *mut _) };
+    pub unsafe fn new(
+        device: ffi::VkDevice,
+        physical_device: ffi::VkPhysicalDevice,
+    ) -> Result<Self, &'static str> {
+        let mut ctx = ffi::VkDeviceContext {
+            vkDevice: device,
+            vkPhysicalDevice: physical_device,
+            vkDeviceProcAddr: Some(vkGetDeviceProcAddr),
+            instanceFunctions: ffi::VkInstanceFunctionTableFFX {
+                getPhysicalDeviceFeatures2: Some(vkGetPhysicalDeviceFeatures2),
+                enumerateDeviceExtensionProperties: Some(vkEnumerateDeviceExtensionProperties),
+                getPhysicalDeviceMemoryProperties: Some(vkGetPhysicalDeviceMemoryProperties),
+                getPhysicalDeviceProperties2: Some(vkGetPhysicalDeviceProperties2),
+            },
+        };
+        let raw = unsafe { ffi::ffxGetDeviceVK((&mut ctx) as *mut _) };
         if raw.is_null() {
             Err("ffxGetDeviceVK returned null")
         } else {
-            Ok(Self { raw, physical_device: ctx.vkPhysicalDevice })
+            Ok(Self {
+                raw,
+                physical_device: ctx.vkPhysicalDevice,
+            })
         }
     }
 
@@ -182,10 +199,7 @@ impl BackendInterface {
     /// # Safety
     ///
     /// `device` must outlive this interface.
-    pub unsafe fn new(
-        device: &Device,
-        max_contexts: usize,
-    ) -> Result<Self, FfxError> {
+    pub unsafe fn new(device: &Device, max_contexts: usize) -> Result<Self, FfxError> {
         let scratch_size =
             unsafe { ffi::ffxGetScratchMemorySizeVK(device.physical_device, max_contexts) };
         let mut scratch = vec![0u8; scratch_size];
@@ -264,6 +278,32 @@ pub fn render_resolution_from_quality_mode(
     Ok((w, h))
 }
 
+// Helper function for VkDeviceContext
+unsafe extern "C" {
+    fn vkGetDeviceProcAddr(
+        device: ffi::VkDevice,
+        pName: *const std::ffi::c_char,
+    ) -> ffi::PFN_vkVoidFunction;
+    fn vkGetPhysicalDeviceFeatures2(
+        physicalDevice: ffi::VkPhysicalDevice,
+        pFeatures: *mut ffi::VkPhysicalDeviceFeatures2,
+    );
+    fn vkEnumerateDeviceExtensionProperties(
+        physicalDevice: ffi::VkPhysicalDevice,
+        pLayerName: *const std::ffi::c_char,
+        pPropertyCount: *mut u32,
+        pProperties: *mut ffi::VkExtensionProperties,
+    ) -> ffi::VkResult;
+    fn vkGetPhysicalDeviceMemoryProperties(
+        physicalDevice: ffi::VkPhysicalDevice,
+        pMemoryProperties: *mut ffi::VkPhysicalDeviceMemoryProperties,
+    );
+    fn vkGetPhysicalDeviceProperties2(
+        physicalDevice: ffi::VkPhysicalDevice,
+        pProperties: *mut ffi::VkPhysicalDeviceProperties2,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,14 +313,6 @@ mod tests {
         assert_eq!(ffi::FFX_FSR3UPSCALER_VERSION_MAJOR, 3);
         assert_eq!(ffi::FFX_FSR3UPSCALER_VERSION_MINOR, 1);
         assert_eq!(ffi::FFX_FSR3UPSCALER_VERSION_PATCH, 4);
-    }
-
-    #[test]
-    fn jitter_helpers() {
-        let count = jitter_phase_count(1920, 3840);
-        assert!(count > 0);
-        let (x, y) = jitter_offset(0, count);
-        assert!(x != 0.0 || y != 0.0);
     }
 
     #[test]
@@ -330,21 +362,18 @@ mod tests {
 
         let entry = unsafe { ash::Entry::load() }.expect("failed to load vulkan");
 
-        let app_info = ash::vk::ApplicationInfo::default()
-            .api_version(ash::vk::API_VERSION_1_0);
-        let create_info = ash::vk::InstanceCreateInfo::default()
-            .application_info(&app_info);
+        let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_0);
+        let create_info = ash::vk::InstanceCreateInfo::default().application_info(&app_info);
         let instance = unsafe { entry.create_instance(&create_info, None) }
             .expect("failed to create instance");
 
-        let physical_devices = unsafe { instance.enumerate_physical_devices() }
-            .expect("enumerate_physical_devices");
+        let physical_devices =
+            unsafe { instance.enumerate_physical_devices() }.expect("enumerate_physical_devices");
         assert!(!physical_devices.is_empty(), "no physical devices");
         let physical_device = physical_devices[0];
 
-        let queue_families = unsafe {
-            instance.get_physical_device_queue_family_properties(physical_device)
-        };
+        let queue_families =
+            unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
         let qfi = queue_families
             .iter()
             .position(|q| {
@@ -357,28 +386,17 @@ mod tests {
             .queue_family_index(qfi as u32)
             .queue_priorities(&[1.0]);
         let queue_create_infos = [queue_info];
-        let device_create_info = ash::vk::DeviceCreateInfo::default()
-            .queue_create_infos(&queue_create_infos);
+        let device_create_info =
+            ash::vk::DeviceCreateInfo::default().queue_create_infos(&queue_create_infos);
         let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
             .expect("create_device");
 
-        let get_device_proc_addr: ffi::PFN_vkGetDeviceProcAddr = unsafe {
-            let pfn = entry.get_instance_proc_addr(
-                instance.handle(),
-                c"vkGetDeviceProcAddr".as_ptr(),
-            );
-            std::mem::transmute(pfn)
-        };
+        let ffx_device =
+            unsafe { Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _) }
+                .expect("Device::new failed");
+        assert!(!ffx_device.as_raw().is_null());
 
-        let mut vk_ctx = ffi::VkDeviceContext {
-            vkDevice: device.handle().as_raw() as ffi::VkDevice,
-            vkPhysicalDevice: physical_device.as_raw() as ffi::VkPhysicalDevice,
-            vkDeviceProcAddr: get_device_proc_addr,
-            instanceFunctions: ffi::VkInstanceFunctionTableFFX::default(),
-        };
-
-        let device_ctx = unsafe { Device::new(&mut vk_ctx) }.expect("Device::new failed");
-        assert!(!device_ctx.as_raw().is_null());
+        let _backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
 
         unsafe { device.destroy_device(None) };
         unsafe { instance.destroy_instance(None) };

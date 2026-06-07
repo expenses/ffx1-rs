@@ -202,21 +202,13 @@ impl BackendInterface {
     pub unsafe fn new(device: &Device, max_contexts: usize) -> Result<Self, FfxError> {
         let scratch_size =
             unsafe { ffi::ffxGetScratchMemorySizeVK(device.physical_device, max_contexts) };
-        // Overallocate by 8 so we can shift for alignment.
-        let scratch = vec![0u8; scratch_size + 8];
-        // sizeof(BackendContext_VK) % 16 == 8, so the scratch pointer must
-        // satisfy ptr % 16 == 8 to make pGpuJobs 16-byte aligned.
-        let scratch_ptr = unsafe {
-            scratch
-                .as_ptr()
-                .add(scratch.as_ptr().add(8).align_offset(16))
-        };
+        let scratch = vec![0u8; scratch_size];
         let mut interface = ffi::FfxInterface::default();
         let code = unsafe {
             ffi::ffxGetInterfaceVK(
                 &mut interface,
                 device.raw,
-                scratch_ptr as *mut _,
+                scratch.as_ptr() as *mut _,
                 scratch_size,
                 max_contexts,
             )

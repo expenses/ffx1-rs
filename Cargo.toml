@@ -3,6 +3,10 @@ name = "fsr3-rs2"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+// Required due to funky C documentation generation
+doctest = false
+
 [build-dependencies]
 cmake = "0.1"
 bindgen = "0.71"

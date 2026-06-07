@@ -61,7 +61,7 @@ fn main() {
         .default_enum_style(EnumVariation::Rust { non_exhaustive: false })
         .constified_enum_module("FfxResourceUsage|FfxResourceStates|FfxBindStage|FfxFsr3UpscalerInitializationFlagBits|FfxFsr2InitializationFlagBits|FfxOpticalflowInitializationFlagBits|FfxFsr3UpscalerDispatchFlags|FfxResourceFlags")
         .derive_default(true)
-        .generate_comments(false);
+        .generate_comments(true);
 
     let bindings = bindgen_builder
         .generate()

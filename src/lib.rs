@@ -73,7 +73,7 @@ pub struct UpscalerContext {
 
 impl UpscalerContext {
     pub fn create(desc: &UpscalerContextDescription) -> Result<Self, FfxError> {
-        let mut ctx = Box::new(ffi::FfxFsr3UpscalerContext::default());
+        let mut ctx = unsafe { Box::<ffi::FfxFsr3UpscalerContext>::new_zeroed().assume_init() };
         ok_or_error(unsafe { ffi::ffxFsr3UpscalerContextCreate(&mut *ctx, desc as *const _) })?;
         Ok(Self { inner: ctx })
     }
@@ -202,13 +202,22 @@ impl BackendInterface {
     pub unsafe fn new(device: &Device, max_contexts: usize) -> Result<Self, FfxError> {
         let scratch_size =
             unsafe { ffi::ffxGetScratchMemorySizeVK(device.physical_device, max_contexts) };
-        let mut scratch = vec![0u8; scratch_size];
+        // Overallocate by 8 so we can shift for alignment.
+        let mut scratch = vec![0u8; scratch_size + 8];
+        let base_ptr = scratch.as_mut_ptr() as usize;
+        // sizeof(BackendContext_VK) % 16 == 8, so the scratch pointer must
+        // satisfy ptr % 16 == 8 to make pGpuJobs 16-byte aligned.
+        let scratch_ptr = unsafe {
+            scratch
+                .as_mut_ptr()
+                .add(scratch.as_ptr().add(8).align_offset(16))
+        };
         let mut interface = ffi::FfxInterface::default();
         let code = unsafe {
             ffi::ffxGetInterfaceVK(
                 &mut interface,
                 device.raw,
-                scratch.as_mut_ptr() as *mut _,
+                scratch_ptr as *mut _,
                 scratch_size,
                 max_contexts,
             )
@@ -362,7 +371,7 @@ mod tests {
 
         let entry = unsafe { ash::Entry::load() }.expect("failed to load vulkan");
 
-        let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_0);
+        let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_3);
         let create_info = ash::vk::InstanceCreateInfo::default().application_info(&app_info);
         let instance = unsafe { entry.create_instance(&create_info, None) }
             .expect("failed to create instance");
@@ -386,8 +395,18 @@ mod tests {
             .queue_family_index(qfi as u32)
             .queue_priorities(&[1.0]);
         let queue_create_infos = [queue_info];
-        let device_create_info =
-            ash::vk::DeviceCreateInfo::default().queue_create_infos(&queue_create_infos);
+        let extension_names = [
+            ash::khr::get_memory_requirements2::NAME.as_ptr(),
+            ash::khr::dedicated_allocation::NAME.as_ptr(),
+        ];
+        let mut features12 =
+            ash::vk::PhysicalDeviceVulkan12Features::default().shader_float16(true);
+        let features = ash::vk::PhysicalDeviceFeatures::default().shader_int16(true);
+        let device_create_info = ash::vk::DeviceCreateInfo::default()
+            .queue_create_infos(&queue_create_infos)
+            .enabled_extension_names(&extension_names)
+            .push_next(&mut features12)
+            .enabled_features(&features);
         let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
             .expect("create_device");
 
@@ -396,7 +415,21 @@ mod tests {
                 .expect("Device::new failed");
         assert!(!ffx_device.as_raw().is_null());
 
-        let _backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
+        let backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
+
+        {
+            let _upscaler = backend.create_upscaler(
+                FfxFsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            );
+        }
 
         unsafe { device.destroy_device(None) };
         unsafe { instance.destroy_instance(None) };

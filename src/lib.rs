@@ -323,4 +323,64 @@ mod tests {
         let _ = ffi::FfxDevice::default();
         let _ = ffi::FfxInterface::default();
     }
+
+    #[test]
+    fn device_creation_with_ash() {
+        use ash::vk::Handle;
+
+        let entry = unsafe { ash::Entry::load() }.expect("failed to load vulkan");
+
+        let app_info = ash::vk::ApplicationInfo::default()
+            .api_version(ash::vk::API_VERSION_1_0);
+        let create_info = ash::vk::InstanceCreateInfo::default()
+            .application_info(&app_info);
+        let instance = unsafe { entry.create_instance(&create_info, None) }
+            .expect("failed to create instance");
+
+        let physical_devices = unsafe { instance.enumerate_physical_devices() }
+            .expect("enumerate_physical_devices");
+        assert!(!physical_devices.is_empty(), "no physical devices");
+        let physical_device = physical_devices[0];
+
+        let queue_families = unsafe {
+            instance.get_physical_device_queue_family_properties(physical_device)
+        };
+        let qfi = queue_families
+            .iter()
+            .position(|q| {
+                q.queue_flags
+                    .contains(ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE)
+            })
+            .expect("no graphics/compute queue family");
+
+        let queue_info = ash::vk::DeviceQueueCreateInfo::default()
+            .queue_family_index(qfi as u32)
+            .queue_priorities(&[1.0]);
+        let queue_create_infos = [queue_info];
+        let device_create_info = ash::vk::DeviceCreateInfo::default()
+            .queue_create_infos(&queue_create_infos);
+        let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
+            .expect("create_device");
+
+        let get_device_proc_addr: ffi::PFN_vkGetDeviceProcAddr = unsafe {
+            let pfn = entry.get_instance_proc_addr(
+                instance.handle(),
+                c"vkGetDeviceProcAddr".as_ptr(),
+            );
+            std::mem::transmute(pfn)
+        };
+
+        let mut vk_ctx = ffi::VkDeviceContext {
+            vkDevice: device.handle().as_raw() as ffi::VkDevice,
+            vkPhysicalDevice: physical_device.as_raw() as ffi::VkPhysicalDevice,
+            vkDeviceProcAddr: get_device_proc_addr,
+            instanceFunctions: ffi::VkInstanceFunctionTableFFX::default(),
+        };
+
+        let device_ctx = unsafe { Device::new(&mut vk_ctx) }.expect("Device::new failed");
+        assert!(!device_ctx.as_raw().is_null());
+
+        unsafe { device.destroy_device(None) };
+        unsafe { instance.destroy_instance(None) };
+    }
 }

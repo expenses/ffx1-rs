@@ -38,6 +38,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=ffx_fsr3upscaler_x64");
     println!("cargo:rustc-link-lib=static=ffx_fsr2_x64");
     println!("cargo:rustc-link-lib=static=ffx_opticalflow_x64");
+    println!("cargo:rustc-link-lib=stdc++");
     println!("cargo:rustc-link-lib=dylib=vulkan");
 
     let sdk_inc = sdk.join("include");

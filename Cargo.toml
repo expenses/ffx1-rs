@@ -6,6 +6,9 @@ edition = "2024"
 [lib]
 doctest = false
 
+[dev-dependencies]
+ash = "0.38"
+
 [build-dependencies]
 cmake = "0.1"
 bindgen = "0.71"

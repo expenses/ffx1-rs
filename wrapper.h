@@ -7,3 +7,4 @@
 #include <FidelityFX/host/ffx_fsr3upscaler.h>
 #include <FidelityFX/host/ffx_fsr2.h>
 #include <FidelityFX/host/ffx_opticalflow.h>
+#include <FidelityFX/host/backends/vk/ffx_vk.h>

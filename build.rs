@@ -147,7 +147,7 @@ fn main() {
                 "FFX_DENOISER_",
                 "FFX_CLASSIFIER_",
                 "FFX_FSR3UPSCALER_",
-                "FFX_RESOURCE_TYPE_"
+                "FFX_RESOURCE_TYPE_",
             ];
             for p in PREFIXES {
                 if let Some(rest) = original_variant_name.strip_prefix(p) {

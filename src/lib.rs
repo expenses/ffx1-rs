@@ -1304,16 +1304,16 @@ mod tests {
     fn parallel_sort() {
         use ash::vk::Handle;
 
-        const NUM_KEYS: u32 = 64;
+        let num_keys = 2048;
 
         let td = TestDevice::new();
         let backend = unsafe { BackendInterface::new(&td.ffx_device, 2) }.unwrap();
 
         let mut sorter = backend
-            .create_parallel_sort(ParallelSortInitializationFlagBits(0), NUM_KEYS)
+            .create_parallel_sort(ParallelSortInitializationFlagBits(0), num_keys)
             .unwrap();
 
-        let buffer_size: u64 = (NUM_KEYS as u64) * 4;
+        let buffer_size: u64 = (num_keys as u64) * 4;
 
         let buffer_info = ash::vk::BufferCreateInfo::default()
             .size(buffer_size)
@@ -1358,9 +1358,9 @@ mod tests {
         }
         .expect("map_memory");
         let keys: &mut [u32] =
-            unsafe { std::slice::from_raw_parts_mut(data_ptr as *mut u32, NUM_KEYS as usize) };
-        for i in 0..NUM_KEYS as usize {
-            keys[i] = NUM_KEYS as u32 - 1 - i as u32;
+            unsafe { std::slice::from_raw_parts_mut(data_ptr as *mut u32, num_keys as usize) };
+        for i in 0..num_keys as usize {
+            keys[i] = num_keys as u32 - 1 - i as u32;
         }
 
         let resource = resource_from_vk_buffer(
@@ -1395,14 +1395,10 @@ mod tests {
 
         sorter
             .dispatch(&ffi::ParallelSortDispatchDescription {
-                commandList: unsafe {
-                    ffi::GetCommandListVK(
-                        cmd_buffer.as_raw() as usize as *mut ffi::VkCommandBuffer_T
-                    )
-                },
+                commandList: unsafe { ffi::GetCommandListVK(cmd_buffer.as_raw() as *mut _) },
                 keyBuffer: resource,
                 payloadBuffer: ffi::Resource::default(),
-                numKeysToSort: NUM_KEYS,
+                numKeysToSort: num_keys,
             })
             .unwrap();
 
@@ -1418,7 +1414,7 @@ mod tests {
         unsafe { td.device.device_wait_idle() }.expect("device_wait_idle");
 
         let sorted: &[u32] =
-            unsafe { std::slice::from_raw_parts(data_ptr as *const u32, NUM_KEYS as usize) };
+            unsafe { std::slice::from_raw_parts(data_ptr as *const u32, num_keys as usize) };
         assert!(sorted.iter().enumerate().all(|(i, v)| i as u32 == *v));
 
         unsafe {

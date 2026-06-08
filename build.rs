@@ -98,7 +98,7 @@ fn main() {
     let wrapper_h = std::env::current_dir().unwrap().join("wrapper.h");
 
     use bindgen::EnumVariation;
-    use bindgen::callbacks::ParseCallbacks;
+    use bindgen::callbacks::{EnumVariantValue, ParseCallbacks};
 
     #[derive(Debug)]
     struct StripFfxPrefix;
@@ -116,6 +116,41 @@ fn main() {
                 .filter(|r| r.starts_with(|c: char| c.is_uppercase()))
             {
                 return Some(rest.to_string());
+            }
+            None
+        }
+
+        fn enum_variant_name(
+            &self,
+            enum_name: Option<&str>,
+            original_variant_name: &str,
+            _variant_value: EnumVariantValue,
+        ) -> Option<String> {
+            // ErrorCodes has both FFX_EOF and FFX_ERROR_EOF — strip FFX_ so
+            // they become EOF and ERROR_EOF respectively, avoiding a conflict.
+            if enum_name == Some("FfxErrorCodes") {
+                return Some(original_variant_name
+                    .strip_prefix("FFX_")
+                    .unwrap().to_string());
+            }
+
+            const PREFIXES: &[&str] = &[
+                "FFX_SURFACE_FORMAT_",
+                "FFX_BRIXELIZER_GI_INTERNAL_",
+                "FFX_SPD_DOWNSAMPLE_FILTER_",
+                "FFX_CAS_COLOR_SPACE_",
+                "FFX_LENS_FLOAT_",
+                "FFX_BLUR_FLOAT_",
+                "FFX_BLUR_KERNEL_",
+                "FFX_BLUR_KERNEL_PERMUTATIONS_",
+                "FFX_DENOISER_",
+                "FFX_CLASSIFIER_",
+                "FFX_FSR3UPSCALER_"
+            ];
+            for p in PREFIXES {
+                if let Some(rest) = original_variant_name.strip_prefix(p) {
+                    return Some(rest.to_string());
+                }
             }
             None
         }
@@ -181,6 +216,8 @@ fn main() {
         .bitfield_enum("FfxFsr1InitializationFlagBits")
         .bitfield_enum("FfxBrixelizerGIFlags")
         .bitfield_enum("FfxBrixelizerCascadeFlag")
+        .bitfield_enum("FfxBlurKernelPermutation")
+        .bitfield_enum("FfxBlurKernelSize")
         .derive_default(true)
         .generate_comments(true)
         .parse_callbacks(Box::new(StripFfxPrefix));

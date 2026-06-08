@@ -20,23 +20,23 @@ impl std::fmt::Display for FfxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.0 {
             FFX_OK => f.write_str("The operation completed successfully."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_POINTER as i32 => f.write_str("The operation failed due to an invalid pointer."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_ALIGNMENT as i32 => f.write_str("The operation failed due to an invalid alignment."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_SIZE as i32 => f.write_str("The operation failed due to an invalid size."),
-            x if x == ErrorCodes::FFX_EOF as i32 => f.write_str("The end of the file was encountered."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_PATH as i32 => f.write_str("The operation failed because the specified path was invalid."),
-            x if x == ErrorCodes::FFX_ERROR_EOF as i32 => f.write_str("The operation failed because end of file was reached."),
-            x if x == ErrorCodes::FFX_ERROR_MALFORMED_DATA as i32 => f.write_str("The operation failed because of some malformed data."),
-            x if x == ErrorCodes::FFX_ERROR_OUT_OF_MEMORY as i32 => f.write_str("The operation failed because it ran out memory."),
-            x if x == ErrorCodes::FFX_ERROR_INCOMPLETE_INTERFACE as i32 => f.write_str("The operation failed because the interface was not fully configured."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_ENUM as i32 => f.write_str("The operation failed because of an invalid enumeration value."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_ARGUMENT as i32 => f.write_str("The operation failed because an argument was invalid."),
-            x if x == ErrorCodes::FFX_ERROR_OUT_OF_RANGE as i32 => f.write_str("The operation failed because a value was out of range."),
-            x if x == ErrorCodes::FFX_ERROR_NULL_DEVICE as i32 => f.write_str("The operation failed because a device was null."),
-            x if x == ErrorCodes::FFX_ERROR_BACKEND_API_ERROR as i32 => f.write_str("The operation failed because the backend API returned an error code."),
-            x if x == ErrorCodes::FFX_ERROR_INSUFFICIENT_MEMORY as i32 => f.write_str("The operation failed because there was not enough memory."),
-            x if x == ErrorCodes::FFX_ERROR_INVALID_VERSION as i32 => f.write_str("The operation failed because the wrong backend was linked."),
-            x if x == ErrorCodes::FFX_ERROR_ACCESS_DENIED as i32 => f.write_str("The operation failed because access to the resource was denied."),
+            x if x == ErrorCodes::ERROR_INVALID_POINTER as i32 => f.write_str("The operation failed due to an invalid pointer."),
+            x if x == ErrorCodes::ERROR_INVALID_ALIGNMENT as i32 => f.write_str("The operation failed due to an invalid alignment."),
+            x if x == ErrorCodes::ERROR_INVALID_SIZE as i32 => f.write_str("The operation failed due to an invalid size."),
+            x if x == ErrorCodes::EOF as i32 => f.write_str("The end of the file was encountered."),
+            x if x == ErrorCodes::ERROR_INVALID_PATH as i32 => f.write_str("The operation failed because the specified path was invalid."),
+            x if x == ErrorCodes::ERROR_EOF as i32 => f.write_str("The operation failed because end of file was reached."),
+            x if x == ErrorCodes::ERROR_MALFORMED_DATA as i32 => f.write_str("The operation failed because of some malformed data."),
+            x if x == ErrorCodes::ERROR_OUT_OF_MEMORY as i32 => f.write_str("The operation failed because it ran out memory."),
+            x if x == ErrorCodes::ERROR_INCOMPLETE_INTERFACE as i32 => f.write_str("The operation failed because the interface was not fully configured."),
+            x if x == ErrorCodes::ERROR_INVALID_ENUM as i32 => f.write_str("The operation failed because of an invalid enumeration value."),
+            x if x == ErrorCodes::ERROR_INVALID_ARGUMENT as i32 => f.write_str("The operation failed because an argument was invalid."),
+            x if x == ErrorCodes::ERROR_OUT_OF_RANGE as i32 => f.write_str("The operation failed because a value was out of range."),
+            x if x == ErrorCodes::ERROR_NULL_DEVICE as i32 => f.write_str("The operation failed because a device was null."),
+            x if x == ErrorCodes::ERROR_BACKEND_API_ERROR as i32 => f.write_str("The operation failed because the backend API returned an error code."),
+            x if x == ErrorCodes::ERROR_INSUFFICIENT_MEMORY as i32 => f.write_str("The operation failed because there was not enough memory."),
+            x if x == ErrorCodes::ERROR_INVALID_VERSION as i32 => f.write_str("The operation failed because the wrong backend was linked."),
+            x if x == ErrorCodes::ERROR_ACCESS_DENIED as i32 => f.write_str("The operation failed because access to the resource was denied."),
             _ => write!(f, "Unknown FFX error code: {}", self.0),
         }
     }
@@ -1031,7 +1031,7 @@ fn context_creation() {
     {
         let mut upscaler = backend
             .create_fsr3_upscaler(
-                Fsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
+                Fsr3UpscalerInitializationFlagBits::ENABLE_DEBUG_CHECKING,
                 Dimensions2D {
                     width: 1280,
                     height: 720,
@@ -1051,7 +1051,7 @@ fn context_creation() {
     backend
         .create_spd(
             SpdInitializationFlagBits(0),
-            SpdDownsampleFilter::FFX_SPD_DOWNSAMPLE_FILTER_MEAN,
+            SpdDownsampleFilter::MEAN,
         )
         .unwrap();
 
@@ -1062,7 +1062,7 @@ fn context_creation() {
     backend
         .create_cas(
             CasInitializationFlagBits(0),
-            CasColorSpaceConversion::FFX_CAS_COLOR_SPACE_LINEAR,
+            CasColorSpaceConversion::LINEAR,
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1077,8 +1077,8 @@ fn context_creation() {
     backend
         .create_lens(
             LensInitializationFlagBits(0),
-            SurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
-            LensFloatPrecision::FFX_LENS_FLOAT_PRECISION_32BIT,
+            SurfaceFormat::R16G16B16A16_FLOAT,
+            LensFloatPrecision::PRECISION_32BIT,
         )
         .unwrap();
 
@@ -1099,7 +1099,7 @@ fn context_creation() {
     backend
         .create_fsr1(
             Fsr1InitializationFlagBits(0),
-            SurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+            SurfaceFormat::R16G16B16A16_FLOAT,
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1132,7 +1132,7 @@ fn context_creation() {
                 width: 1280,
                 height: 720,
             },
-            SurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+            SurfaceFormat::R16G16B16A16_FLOAT,
         )
         .unwrap();
 
@@ -1142,7 +1142,7 @@ fn context_creation() {
 
     backend
         .create_classifier(
-            ClassifierInitializationFlagBits::FFX_CLASSIFIER_SHADOW,
+            ClassifierInitializationFlagBits::SHADOW,
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1152,12 +1152,12 @@ fn context_creation() {
 
     backend
         .create_denoiser(
-            DenoiserInitializationFlagBits::FFX_DENOISER_SHADOWS,
+            DenoiserInitializationFlagBits::SHADOWS,
             Dimensions2D {
                 width: 1280,
                 height: 720,
             },
-            SurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+            SurfaceFormat::R16G16B16A16_FLOAT,
         )
         .unwrap();
 
@@ -1174,15 +1174,15 @@ fn context_creation() {
     backend
         .create_blur(
             BlurKernelPermutation(FFX_BLUR_KERNEL_PERMUTATIONS_ALL),
-            BlurKernelSize::FFX_BLUR_KERNEL_SIZE_3x3 | BlurKernelSize::FFX_BLUR_KERNEL_SIZE_5x5,
-            BlurFloatPrecision::FFX_BLUR_FLOAT_PRECISION_32BIT,
+            BlurKernelSize::SIZE_3x3 | BlurKernelSize::SIZE_5x5,
+            BlurFloatPrecision::PRECISION_32BIT,
         )
         .unwrap();
 
     backend
         .create_brixelizer_gi(
             BrixelizerGIFlags(0),
-            BrixelizerGIInternalResolution::FFX_BRIXELIZER_GI_INTERNAL_RESOLUTION_NATIVE,
+            BrixelizerGIInternalResolution::RESOLUTION_NATIVE,
             Dimensions2D {
                 width: 1280,
                 height: 720,

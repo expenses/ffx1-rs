@@ -61,6 +61,40 @@ pub fn ok_or_error(code: i32) -> Result<(), FfxError> {
     }
 }
 
+pub fn resource_from_vk_buffer(
+    vk_buffer: u64,
+    size: u32,
+    stride: u32,
+    alignment: u32,
+    flags: ffi::ResourceFlags,
+    usage: ffi::ResourceUsage,
+    state: ffi::ResourceStates,
+    name: &str,
+) -> ffi::Resource {
+    let resource_desc = ffi::ResourceDescription {
+        type_: ffi::ResourceType::FFX_RESOURCE_TYPE_BUFFER,
+        format: ffi::SurfaceFormat::UNKNOWN,
+        __bindgen_anon_1: ffi::ResourceDescription__bindgen_ty_1 { size },
+        __bindgen_anon_2: ffi::ResourceDescription__bindgen_ty_2 { stride },
+        __bindgen_anon_3: ffi::ResourceDescription__bindgen_ty_3 { alignment },
+        mipCount: 1,
+        flags,
+        usage,
+    };
+    let mut name_arr = [0u32; 64];
+    for (i, c) in name.chars().enumerate().take(63) {
+        name_arr[i] = c as u32;
+    }
+    unsafe {
+        ffi::GetResourceVK(
+            vk_buffer as *mut std::ffi::c_void,
+            resource_desc,
+            name_arr.as_ptr(),
+            state,
+        )
+    }
+}
+
 macro_rules! define_context {
     ($name:ident, $ctx:ty, $desc:ty, $create:path, $destroy:path) => {
         #[derive(Debug)]
@@ -940,7 +974,6 @@ pub fn render_resolution_from_quality_mode(
     Ok((w, h))
 }
 
-// Helper function for VkDeviceContext
 unsafe extern "C" {
     fn vkGetDeviceProcAddr(device: VkDevice, pName: *const std::ffi::c_char) -> PFN_vkVoidFunction;
     fn vkGetPhysicalDeviceFeatures2(
@@ -963,83 +996,166 @@ unsafe extern "C" {
     );
 }
 
-#[test]
-fn context_creation() {
-    use ash::vk::Handle;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let entry = unsafe { ash::Entry::load() }.expect("failed to load vulkan");
-
-    let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_3);
-    let create_info = ash::vk::InstanceCreateInfo::default().application_info(&app_info);
-    let instance =
-        unsafe { entry.create_instance(&create_info, None) }.expect("failed to create instance");
-
-    let physical_devices =
-        unsafe { instance.enumerate_physical_devices() }.expect("enumerate_physical_devices");
-    assert!(!physical_devices.is_empty(), "no physical devices");
-    let physical_device = physical_devices[0];
-
-    let queue_families =
-        unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
-    let qfi = queue_families
-        .iter()
-        .position(|q| {
-            q.queue_flags
-                .contains(ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE)
-        })
-        .expect("no graphics/compute queue family");
-
-    let queue_info = ash::vk::DeviceQueueCreateInfo::default()
-        .queue_family_index(qfi as u32)
-        .queue_priorities(&[1.0]);
-    let queue_create_infos = [queue_info];
-
-    let ext_props = unsafe { instance.enumerate_device_extension_properties(physical_device) }
-        .unwrap_or_default();
-    let amd_coherent = ext_props.iter().any(|e| {
-        e.extension_name_as_c_str()
-            .is_ok_and(|name| name == ash::amd::device_coherent_memory::NAME)
-    });
-
-    let mut extension_names = vec![
-        ash::khr::get_memory_requirements2::NAME.as_ptr(),
-        ash::khr::dedicated_allocation::NAME.as_ptr(),
-        ash::ext::shader_subgroup_ballot::NAME.as_ptr(),
-    ];
-    let mut amd_coherent_features = ash::vk::PhysicalDeviceCoherentMemoryFeaturesAMD::default();
-    if amd_coherent {
-        extension_names.push(ash::amd::device_coherent_memory::NAME.as_ptr());
-        amd_coherent_features.device_coherent_memory = 1;
+    struct TestDevice {
+        _entry: ash::Entry,
+        instance: ash::Instance,
+        device: ash::Device,
+        physical_device: ash::vk::PhysicalDevice,
+        qfi: u32,
+        ffx_device: Device,
     }
 
-    let mut features12 = ash::vk::PhysicalDeviceVulkan12Features::default()
-        .shader_float16(true)
-        .shader_sampled_image_array_non_uniform_indexing(true)
-        .shader_subgroup_extended_types(true)
-        .shader_storage_buffer_array_non_uniform_indexing(true);
-    let features = ash::vk::PhysicalDeviceFeatures::default()
-        .shader_int16(true)
-        .shader_image_gather_extended(true);
-    let device_create_info = ash::vk::DeviceCreateInfo::default()
-        .queue_create_infos(&queue_create_infos)
-        .enabled_extension_names(&extension_names)
-        .push_next(&mut features12)
-        .push_next(&mut amd_coherent_features)
-        .enabled_features(&features);
-    let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
-        .expect("create_device");
+    impl TestDevice {
+        fn new() -> Self {
+            use ash::vk::Handle;
 
-    let ffx_device =
-        unsafe { Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _) }
-            .expect("Device::new failed");
-    assert!(!ffx_device.as_raw().is_null());
+            unsafe {
+                let entry = ash::Entry::load().expect("failed to load vulkan");
 
-    let backend = unsafe { BackendInterface::new(&ffx_device, 17) }.unwrap();
+                let app_info =
+                    ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_3);
+                let create_info =
+                    ash::vk::InstanceCreateInfo::default().application_info(&app_info);
+                let instance = entry
+                    .create_instance(&create_info, None)
+                    .expect("failed to create instance");
 
-    {
-        let mut upscaler = backend
-            .create_fsr3_upscaler(
-                Fsr3UpscalerInitializationFlagBits::ENABLE_DEBUG_CHECKING,
+                let physical_devices = instance
+                    .enumerate_physical_devices()
+                    .expect("enumerate_physical_devices");
+                assert!(!physical_devices.is_empty(), "no physical devices");
+                let physical_device = physical_devices[0];
+
+                let queue_families =
+                    instance.get_physical_device_queue_family_properties(physical_device);
+                let qfi = queue_families
+                    .iter()
+                    .position(|q| {
+                        q.queue_flags.contains(
+                            ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE,
+                        )
+                    })
+                    .expect("no graphics/compute queue family") as u32;
+
+                let queue_info = ash::vk::DeviceQueueCreateInfo::default()
+                    .queue_family_index(qfi)
+                    .queue_priorities(&[1.0]);
+                let queue_create_infos = [queue_info];
+
+                let ext_props = instance
+                    .enumerate_device_extension_properties(physical_device)
+                    .unwrap_or_default();
+                let amd_coherent = ext_props.iter().any(|e| {
+                    e.extension_name_as_c_str()
+                        .is_ok_and(|name| name == ash::amd::device_coherent_memory::NAME)
+                });
+
+                let mut extension_names = vec![
+                    ash::khr::get_memory_requirements2::NAME.as_ptr(),
+                    ash::khr::dedicated_allocation::NAME.as_ptr(),
+                    ash::ext::shader_subgroup_ballot::NAME.as_ptr(),
+                ];
+                let mut amd_coherent_features =
+                    ash::vk::PhysicalDeviceCoherentMemoryFeaturesAMD::default();
+                if amd_coherent {
+                    extension_names.push(ash::amd::device_coherent_memory::NAME.as_ptr());
+                    amd_coherent_features.device_coherent_memory = 1;
+                }
+
+                let mut features12 = ash::vk::PhysicalDeviceVulkan12Features::default()
+                    .shader_float16(true)
+                    .shader_sampled_image_array_non_uniform_indexing(true)
+                    .shader_subgroup_extended_types(true)
+                    .shader_storage_buffer_array_non_uniform_indexing(true);
+                let features = ash::vk::PhysicalDeviceFeatures::default()
+                    .shader_int16(true)
+                    .shader_image_gather_extended(true);
+                let device_create_info = ash::vk::DeviceCreateInfo::default()
+                    .queue_create_infos(&queue_create_infos)
+                    .enabled_extension_names(&extension_names)
+                    .push_next(&mut features12)
+                    .push_next(&mut amd_coherent_features)
+                    .enabled_features(&features);
+                let device = instance
+                    .create_device(physical_device, &device_create_info, None)
+                    .expect("create_device");
+
+                let ffx_device =
+                    Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _)
+                        .expect("Device::new failed");
+
+            Self {
+                _entry: entry,
+                instance,
+                device,
+                    physical_device,
+                    qfi,
+                    ffx_device,
+                }
+            }
+        }
+
+        fn queue(&self) -> ash::vk::Queue {
+            unsafe { self.device.get_device_queue(self.qfi, 0) }
+        }
+    }
+
+    impl Drop for TestDevice {
+        fn drop(&mut self) {
+            unsafe {
+                self.device.destroy_device(None);
+                self.instance.destroy_instance(None);
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn create_all_contexts() {
+        let td = TestDevice::new();
+        assert!(!td.ffx_device.as_raw().is_null());
+
+        let backend = unsafe { BackendInterface::new(&td.ffx_device, 17) }.unwrap();
+
+        {
+            let mut upscaler = backend
+                .create_fsr3_upscaler(
+                    Fsr3UpscalerInitializationFlagBits::ENABLE_DEBUG_CHECKING,
+                    Dimensions2D {
+                        width: 1280,
+                        height: 720,
+                    },
+                    Dimensions2D {
+                        width: 1280,
+                        height: 720,
+                    },
+                )
+                .unwrap();
+
+            dbg!(upscaler.gpu_memory_usage()).unwrap();
+        }
+
+        backend.create_lpm().unwrap();
+
+        backend
+            .create_spd(
+                SpdInitializationFlagBits(0),
+                SpdDownsampleFilter::MEAN,
+            )
+            .unwrap();
+
+        backend
+            .create_parallel_sort(ParallelSortInitializationFlagBits(0), 1024)
+            .unwrap();
+
+        backend
+            .create_cas(
+                CasInitializationFlagBits(0),
+                CasColorSpaceConversion::LINEAR,
                 Dimensions2D {
                     width: 1280,
                     height: 720,
@@ -1051,172 +1167,262 @@ fn context_creation() {
             )
             .unwrap();
 
-        dbg!(upscaler.gpu_memory_usage()).unwrap();
+        backend
+            .create_lens(
+                LensInitializationFlagBits(0),
+                SurfaceFormat::R16G16B16A16_FLOAT,
+                LensFloatPrecision::PRECISION_32BIT,
+            )
+            .unwrap();
+
+        backend
+            .create_fsr2(
+                Fsr2InitializationFlagBits(0),
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .unwrap();
+
+        backend
+            .create_fsr1(
+                Fsr1InitializationFlagBits(0),
+                SurfaceFormat::R16G16B16A16_FLOAT,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .unwrap();
+
+        backend.create_cacao(1280, 720, false).unwrap();
+
+        backend
+            .create_dof(
+                DofInitializationFlagBits(0),
+                5,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                1.0,
+            )
+            .unwrap();
+
+        backend
+            .create_sssr(
+                SssrInitializationFlagBits(0),
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                SurfaceFormat::R16G16B16A16_FLOAT,
+            )
+            .unwrap();
+
+        backend
+            .create_vrs(VrsInitializationFlagBits(0), 16)
+            .unwrap();
+
+        backend
+            .create_classifier(
+                ClassifierInitializationFlagBits::SHADOW,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .unwrap();
+
+        backend
+            .create_denoiser(
+                DenoiserInitializationFlagBits::SHADOWS,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                SurfaceFormat::R16G16B16A16_FLOAT,
+            )
+            .unwrap();
+
+        backend
+            .create_optical_flow(
+                OpticalflowInitializationFlagBits(0),
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .unwrap();
+
+        backend
+            .create_blur(
+                BlurKernelPermutation(FFX_BLUR_KERNEL_PERMUTATIONS_ALL),
+                BlurKernelSize::SIZE_3x3 | BlurKernelSize::SIZE_5x5,
+                BlurFloatPrecision::PRECISION_32BIT,
+            )
+            .unwrap();
+
+        backend
+            .create_brixelizer_gi(
+                BrixelizerGIFlags(0),
+                BrixelizerGIInternalResolution::RESOLUTION_NATIVE,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .unwrap();
+
+        {
+            let alloc_callbacks = AllocationCallbacks {
+                fpAlloc: Some(libc::malloc),
+                fpRealloc: Some(libc::realloc),
+                fpFree: Some(libc::free),
+            };
+            let queue_type: u32 = 0;
+            let _bc = BreadcrumbsContext::create(&BreadcrumbsContextDescription {
+                flags: 0,
+                frameHistoryLength: 2,
+                maxMarkersPerMemoryBlock: 1024,
+                usedGpuQueuesCount: 1,
+                pUsedGpuQueues: &queue_type as *const _ as *mut _,
+                allocCallbacks: alloc_callbacks,
+                backendInterface: *backend.as_ref(),
+            })
+            .unwrap();
+        }
     }
 
-    backend.create_lpm().unwrap();
+    #[test]
+    #[serial_test::serial]
+    fn parallel_sort() {
+        use ash::vk::Handle;
 
-    backend
-        .create_spd(
-            SpdInitializationFlagBits(0),
-            SpdDownsampleFilter::MEAN,
-        )
-        .unwrap();
+        const NUM_KEYS: u32 = 64;
 
-    backend
-        .create_parallel_sort(ParallelSortInitializationFlagBits(0), 1024)
-        .unwrap();
+        let td = TestDevice::new();
+        let backend = unsafe { BackendInterface::new(&td.ffx_device, 2) }.unwrap();
 
-    backend
-        .create_cas(
-            CasInitializationFlagBits(0),
-            CasColorSpaceConversion::LINEAR,
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-        )
-        .unwrap();
+        let mut sorter = backend
+            .create_parallel_sort(ParallelSortInitializationFlagBits(0), NUM_KEYS)
+            .unwrap();
 
-    backend
-        .create_lens(
-            LensInitializationFlagBits(0),
-            SurfaceFormat::R16G16B16A16_FLOAT,
-            LensFloatPrecision::PRECISION_32BIT,
-        )
-        .unwrap();
+        let buffer_size: u64 = (NUM_KEYS as u64) * 4;
 
-    backend
-        .create_fsr2(
-            Fsr2InitializationFlagBits(0),
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-        )
-        .unwrap();
+        let buffer_info = ash::vk::BufferCreateInfo::default()
+            .size(buffer_size)
+            .usage(ash::vk::BufferUsageFlags::STORAGE_BUFFER)
+            .sharing_mode(ash::vk::SharingMode::EXCLUSIVE);
+        let buffer = unsafe { td.device.create_buffer(&buffer_info, None) }
+            .expect("create_buffer");
 
-    backend
-        .create_fsr1(
-            Fsr1InitializationFlagBits(0),
-            SurfaceFormat::R16G16B16A16_FLOAT,
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-        )
-        .unwrap();
+        let mem_reqs = unsafe { td.device.get_buffer_memory_requirements(buffer) };
 
-    backend.create_cacao(1280, 720, false).unwrap();
-
-    backend
-        .create_dof(
-            DofInitializationFlagBits(0),
-            5,
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-            1.0,
-        )
-        .unwrap();
-
-    backend
-        .create_sssr(
-            SssrInitializationFlagBits(0),
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-            SurfaceFormat::R16G16B16A16_FLOAT,
-        )
-        .unwrap();
-
-    backend
-        .create_vrs(VrsInitializationFlagBits(0), 16)
-        .unwrap();
-
-    backend
-        .create_classifier(
-            ClassifierInitializationFlagBits::SHADOW,
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-        )
-        .unwrap();
-
-    backend
-        .create_denoiser(
-            DenoiserInitializationFlagBits::SHADOWS,
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-            SurfaceFormat::R16G16B16A16_FLOAT,
-        )
-        .unwrap();
-
-    backend
-        .create_optical_flow(
-            OpticalflowInitializationFlagBits(0),
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-        )
-        .unwrap();
-
-    backend
-        .create_blur(
-            BlurKernelPermutation(FFX_BLUR_KERNEL_PERMUTATIONS_ALL),
-            BlurKernelSize::SIZE_3x3 | BlurKernelSize::SIZE_5x5,
-            BlurFloatPrecision::PRECISION_32BIT,
-        )
-        .unwrap();
-
-    backend
-        .create_brixelizer_gi(
-            BrixelizerGIFlags(0),
-            BrixelizerGIInternalResolution::RESOLUTION_NATIVE,
-            Dimensions2D {
-                width: 1280,
-                height: 720,
-            },
-        )
-        .unwrap();
-
-    {
-        let alloc_callbacks = AllocationCallbacks {
-            fpAlloc: Some(libc::malloc),
-            fpRealloc: Some(libc::realloc),
-            fpFree: Some(libc::free),
+        let mem_props = unsafe {
+            td.instance
+                .get_physical_device_memory_properties(td.physical_device)
         };
-        let queue_type: u32 = 0;
-        let _bc = BreadcrumbsContext::create(&BreadcrumbsContextDescription {
-            flags: 0,
-            frameHistoryLength: 2,
-            maxMarkersPerMemoryBlock: 1024,
-            usedGpuQueuesCount: 1,
-            pUsedGpuQueues: &queue_type as *const _ as *mut _,
-            allocCallbacks: alloc_callbacks,
-            backendInterface: *backend.as_ref(),
-        })
-        .unwrap();
-    }
+        let mem_type_index = (0..mem_props.memory_type_count)
+            .find(|&i| {
+                let available = mem_reqs.memory_type_bits & (1 << i) != 0;
+                let props = mem_props.memory_types[i as usize];
+                available
+                    && props.property_flags.contains(
+                        ash::vk::MemoryPropertyFlags::HOST_VISIBLE
+                            | ash::vk::MemoryPropertyFlags::HOST_COHERENT,
+                    )
+            })
+            .expect("no suitable memory type");
 
-    unsafe { device.destroy_device(None) };
-    unsafe { instance.destroy_instance(None) };
+        let alloc_info = ash::vk::MemoryAllocateInfo::default()
+            .allocation_size(mem_reqs.size)
+            .memory_type_index(mem_type_index);
+        let buffer_memory = unsafe { td.device.allocate_memory(&alloc_info, None) }
+            .expect("allocate_memory");
+
+        unsafe { td.device.bind_buffer_memory(buffer, buffer_memory, 0) }
+            .expect("bind_buffer_memory");
+
+        let data_ptr = unsafe {
+            td.device
+                .map_memory(buffer_memory, 0, buffer_size, ash::vk::MemoryMapFlags::empty())
+        }
+        .expect("map_memory");
+        let keys: &mut [u32] =
+            unsafe { std::slice::from_raw_parts_mut(data_ptr as *mut u32, NUM_KEYS as usize) };
+        for i in 0..NUM_KEYS as usize {
+            keys[i] = NUM_KEYS as u32 - 1 - i as u32;
+        }
+
+        let resource = resource_from_vk_buffer(
+            buffer.as_raw(),
+            buffer_size as u32,
+            4,
+            4,
+            ffi::ResourceFlags::FFX_RESOURCE_FLAGS_NONE,
+            ffi::ResourceUsage::FFX_RESOURCE_USAGE_UAV,
+            ffi::ResourceStates::FFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            "sort_keys",
+        );
+
+        let pool_info = ash::vk::CommandPoolCreateInfo::default()
+            .queue_family_index(td.qfi)
+            .flags(ash::vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
+        let pool = unsafe { td.device.create_command_pool(&pool_info, None) }
+            .expect("create_command_pool");
+
+        let alloc_info = ash::vk::CommandBufferAllocateInfo::default()
+            .command_pool(pool)
+            .level(ash::vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(1);
+        let cmd_buffers = unsafe { td.device.allocate_command_buffers(&alloc_info) }
+            .expect("allocate_command_buffers");
+        let cmd_buffer = cmd_buffers[0];
+
+        let begin_info = ash::vk::CommandBufferBeginInfo::default()
+            .flags(ash::vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe { td.device.begin_command_buffer(cmd_buffer, &begin_info) }
+            .expect("begin_command_buffer");
+
+        sorter
+            .dispatch(&ffi::ParallelSortDispatchDescription {
+                commandList: unsafe { ffi::GetCommandListVK(cmd_buffer.as_raw() as usize as *mut ffi::VkCommandBuffer_T) },
+                keyBuffer: resource,
+                payloadBuffer: ffi::Resource::default(),
+                numKeysToSort: NUM_KEYS,
+            })
+            .unwrap();
+
+        unsafe { td.device.end_command_buffer(cmd_buffer) }
+            .expect("end_command_buffer");
+
+        let cmds = [cmd_buffer];
+        let submit_info = ash::vk::SubmitInfo::default().command_buffers(&cmds);
+        unsafe {
+            td.device
+                .queue_submit(td.queue(), &[submit_info], ash::vk::Fence::null())
+        }
+        .expect("queue_submit");
+        unsafe { td.device.device_wait_idle() }.expect("device_wait_idle");
+
+        let sorted: &[u32] =
+            unsafe { std::slice::from_raw_parts(data_ptr as *const u32, NUM_KEYS as usize) };
+        assert!(sorted.iter().enumerate().all(|(i, v)| i as u32 == *v));
+
+        unsafe {
+            td.device.destroy_buffer(buffer, None);
+            td.device.free_memory(buffer_memory, None);
+            td.device.destroy_command_pool(pool, None);
+        }
+    }
 }

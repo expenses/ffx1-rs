@@ -1,9 +1,13 @@
 [package]
-name = "fsr3-rs2"
+name = "ffx1"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/expenses/ffx1-rs"
+description = "Bindings for the FidelityFX-SDK version v1.1.4 including Linux support and FSR3"
 
 [lib]
+# Required due to funky bindgen documentation
 doctest = false
 
 [dev-dependencies]

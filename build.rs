@@ -1,8 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::fs;
 
 fn main() {
-    let root = PathBuf::from("FidelityFX-SDK-Linux");
-    let sdk = root.join("sdk");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let ffx_src = out_dir.join("FidelityFX-SDK-Linux");
+    if !ffx_src.exists() {
+        copy_dir_all(&Path::new("FidelityFX-SDK-Linux"), &ffx_src)
+            .unwrap_or_else(|e| panic!("failed to copy FidelityFX-SDK-Linux to OUT_DIR: {e}"));
+    }
+    let sdk = ffx_src.join("sdk");
 
     let mut cmake_cfg = cmake::Config::new(&sdk);
     cmake_cfg
@@ -29,7 +35,7 @@ fn main() {
             .join("components")
             .join("frameinterpolation"),
         sdk.join("bin").join("ffx_sdk"),
-        root.join("bin").join("ffx_sdk"),
+        ffx_src.join("bin").join("ffx_sdk"),
     ] {
         println!("cargo:rustc-link-search=native={}", dir.display());
     }
@@ -68,9 +74,32 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings");
 
-    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
     bindings.write_to_file(out_dir.join("ffi.rs")).unwrap();
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=wrapper.h");
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    let mut stack = vec![(src.to_path_buf(), dst.to_path_buf())];
+
+    while let Some((src_dir, dst_dir)) = stack.pop() {
+        fs::create_dir_all(&dst_dir)?;
+        for entry in fs::read_dir(&src_dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if name == ".git" {
+                continue;
+            }
+            let src_path = entry.path();
+            let dst_path = dst_dir.join(&name);
+            if entry.file_type()?.is_dir() {
+                stack.push((src_path, dst_path));
+            } else {
+                fs::copy(&src_path, &dst_path)?;
+            }
+        }
+    }
+
+    Ok(())
 }

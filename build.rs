@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 fn main() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
@@ -131,7 +131,9 @@ fn main() {
         .clang_arg("-DFFX_BRIXELIZERGI")
         .clang_arg("-DFFX_CLASSIFIER")
         .clang_arg("-DFFX_BREADCRUMBS")
-        .default_enum_style(EnumVariation::Rust { non_exhaustive: false })
+        .default_enum_style(EnumVariation::Rust {
+            non_exhaustive: false,
+        })
         .constified_enum_module(
             "FfxResourceUsage\
             |FfxResourceStates\

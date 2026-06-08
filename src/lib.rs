@@ -161,9 +161,7 @@ define_context!(
 impl Fsr2Context {
     pub fn gpu_memory_usage(&mut self) -> Result<EffectMemoryUsage, FfxError> {
         let mut usage = ffi::FfxEffectMemoryUsage::default();
-        ok_or_error(unsafe {
-            ffi::ffxFsr2ContextGetGpuMemoryUsage(&mut *self.inner, &mut usage)
-        })?;
+        ok_or_error(unsafe { ffi::ffxFsr2ContextGetGpuMemoryUsage(&mut *self.inner, &mut usage) })?;
         Ok(usage)
     }
 
@@ -189,9 +187,7 @@ define_context!(
 impl Fsr1Context {
     pub fn gpu_memory_usage(&mut self) -> Result<EffectMemoryUsage, FfxError> {
         let mut usage = ffi::FfxEffectMemoryUsage::default();
-        ok_or_error(unsafe {
-            ffi::ffxFsr1ContextGetGpuMemoryUsage(&mut *self.inner, &mut usage)
-        })?;
+        ok_or_error(unsafe { ffi::ffxFsr1ContextGetGpuMemoryUsage(&mut *self.inner, &mut usage) })?;
         Ok(usage)
     }
 }
@@ -324,8 +320,7 @@ impl ClassifierContext {
         &mut self,
         desc: &ffi::FfxClassifierReflectionDispatchDescription,
     ) -> Result<(), FfxError> {
-        let code =
-            unsafe { ffi::ffxClassifierContextReflectionDispatch(&mut *self.inner, desc) };
+        let code = unsafe { ffi::ffxClassifierContextReflectionDispatch(&mut *self.inner, desc) };
         ok_or_error(code)
     }
 }
@@ -345,8 +340,7 @@ impl DenoiserContext {
         &mut self,
         desc: &ffi::FfxDenoiserReflectionsDispatchDescription,
     ) -> Result<(), FfxError> {
-        let code =
-            unsafe { ffi::ffxDenoiserContextDispatchReflections(&mut *self.inner, desc) };
+        let code = unsafe { ffi::ffxDenoiserContextDispatchReflections(&mut *self.inner, desc) };
         ok_or_error(code)
     }
 }
@@ -549,8 +543,8 @@ fn context_creation() {
 
     let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_3);
     let create_info = ash::vk::InstanceCreateInfo::default().application_info(&app_info);
-    let instance = unsafe { entry.create_instance(&create_info, None) }
-        .expect("failed to create instance");
+    let instance =
+        unsafe { entry.create_instance(&create_info, None) }.expect("failed to create instance");
 
     let physical_devices =
         unsafe { instance.enumerate_physical_devices() }.expect("enumerate_physical_devices");
@@ -582,6 +576,7 @@ fn context_creation() {
     let mut extension_names = vec![
         ash::khr::get_memory_requirements2::NAME.as_ptr(),
         ash::khr::dedicated_allocation::NAME.as_ptr(),
+        ash::ext::shader_subgroup_ballot::NAME.as_ptr(),
     ];
     let mut amd_coherent_features = ash::vk::PhysicalDeviceCoherentMemoryFeaturesAMD::default();
     if amd_coherent {
@@ -589,9 +584,13 @@ fn context_creation() {
         amd_coherent_features.device_coherent_memory = 1;
     }
 
-    let mut features12 =
-        ash::vk::PhysicalDeviceVulkan12Features::default().shader_float16(true);
-    let features = ash::vk::PhysicalDeviceFeatures::default().shader_int16(true);
+    let mut features12 = ash::vk::PhysicalDeviceVulkan12Features::default()
+        .shader_float16(true)
+        .shader_sampled_image_array_non_uniform_indexing(true)
+        .shader_subgroup_extended_types(true);
+    let features = ash::vk::PhysicalDeviceFeatures::default()
+        .shader_int16(true)
+        .shader_image_gather_extended(true);
     let device_create_info = ash::vk::DeviceCreateInfo::default()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&extension_names)
@@ -606,7 +605,7 @@ fn context_creation() {
             .expect("Device::new failed");
     assert!(!ffx_device.as_raw().is_null());
 
-    let backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
+    let backend = unsafe { BackendInterface::new(&ffx_device, 17) }.unwrap();
 
     {
         let mut upscaler = backend
@@ -623,8 +622,159 @@ fn context_creation() {
             )
             .unwrap();
 
-        dbg!(upscaler.gpu_memory_usage().unwrap());
+        dbg!(upscaler.gpu_memory_usage()).unwrap();
     }
+
+    LpmContext::create(&ffi::FfxLpmContextDescription {
+        flags: 0,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    SpdContext::create(&ffi::FfxSpdContextDescription {
+        flags: 0,
+        downsampleFilter: ffi::FfxSpdDownsampleFilter::FFX_SPD_DOWNSAMPLE_FILTER_MEAN,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    ParallelSortContext::create(&ffi::FfxParallelSortContextDescription {
+        flags: 0,
+        maxEntries: 1024,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    CasContext::create(&ffi::FfxCasContextDescription {
+        flags: 0,
+        colorSpaceConversion: ffi::FfxCasColorSpaceConversion::FFX_CAS_COLOR_SPACE_LINEAR,
+        maxRenderSize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        displaySize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    LensContext::create(&ffi::FfxLensContextDescription {
+        flags: 0,
+        outputFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+        floatPrecision: ffi::FfxLensFloatPrecision::FFX_LENS_FLOAT_PRECISION_32BIT,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    Fsr2Context::create(&ffi::FfxFsr2ContextDescription {
+        flags: 0,
+        maxRenderSize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        displaySize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        fpMessage: None,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    Fsr1Context::create(&ffi::FfxFsr1ContextDescription {
+        flags: 0,
+        outputFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+        maxRenderSize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        displaySize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    CacaoContext::create(&ffi::FfxCacaoContextDescription {
+        width: 1280,
+        height: 720,
+        useDownsampledSsao: false,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    DofContext::create(&ffi::FfxDofContextDescription {
+        flags: 0,
+        quality: 5,
+        resolution: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        backendInterface: *backend.as_ref(),
+        cocLimitFactor: 1.0,
+    })
+    .unwrap();
+
+    SssrContext::create(&ffi::FfxSssrContextDescription {
+        flags: 0,
+        renderSize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        normalsHistoryBufferFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    VrsContext::create(&ffi::FfxVrsContextDescription {
+        flags: 0,
+        shadingRateImageTileSize: 16,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    ClassifierContext::create(&ffi::FfxClassifierContextDescription {
+        flags: ffi::FfxClassifierInitializationFlagBits::FFX_CLASSIFIER_SHADOW,
+        resolution: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    DenoiserContext::create(&ffi::FfxDenoiserContextDescription {
+        flags: ffi::FfxDenoiserInitializationFlagBits::FFX_DENOISER_SHADOWS,
+        windowSize: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+        normalsHistoryBufferFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
+
+    OpticalFlowContext::create(&ffi::FfxOpticalflowContextDescription {
+        backendInterface: *backend.as_ref(),
+        flags: 0,
+        resolution: Dimensions2D {
+            width: 1280,
+            height: 720,
+        },
+    })
+    .unwrap();
+
+    BlurContext::create(&ffi::FfxBlurContextDescription {
+        kernelPermutations: ffi::FFX_BLUR_KERNEL_PERMUTATIONS_ALL,
+        kernelSizes: ffi::FfxBlurKernelSize::FFX_BLUR_KERNEL_SIZE_3x3 as u32
+            | ffi::FfxBlurKernelSize::FFX_BLUR_KERNEL_SIZE_5x5 as u32,
+        floatPrecision: ffi::FfxBlurFloatPrecision::FFX_BLUR_FLOAT_PRECISION_32BIT,
+        backendInterface: *backend.as_ref(),
+    })
+    .unwrap();
 
     unsafe { device.destroy_device(None) };
     unsafe { instance.destroy_instance(None) };

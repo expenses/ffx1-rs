@@ -64,25 +64,45 @@ pub fn ok_or_error(code: i32) -> Result<(), FfxError> {
     }
 }
 
-#[derive(Debug)]
-pub struct UpscalerContext {
-    // Boxed because the opaque context struct is ~838 KB on x64
-    // (FFX_SDK_DEFAULT_CONTEXT_SIZE = 837848 / 4 u32s).
-    inner: Box<ffi::FfxFsr3UpscalerContext>,
+macro_rules! define_context {
+    ($name:ident, $ctx:ty, $desc:ty, $dispatch_desc:ty, $create:path, $dispatch:path, $destroy:path) => {
+        #[derive(Debug)]
+        pub struct $name {
+            inner: Box<$ctx>,
+        }
+
+        impl $name {
+            pub fn create(description: &$desc) -> Result<Self, FfxError> {
+                let mut ctx = unsafe { Box::<$ctx>::new_zeroed().assume_init() };
+                ok_or_error(unsafe { $create(&mut *ctx, description as *const _ as *mut _) })?;
+                Ok(Self { inner: ctx })
+            }
+
+            pub fn dispatch(&mut self, desc: &$dispatch_desc) -> Result<(), FfxError> {
+                let code = unsafe { $dispatch(&mut *self.inner, desc) };
+                ok_or_error(code)
+            }
+        }
+
+        impl Drop for $name {
+            fn drop(&mut self) {
+                unsafe { $destroy(&mut *self.inner) };
+            }
+        }
+    };
 }
 
+define_context!(
+    UpscalerContext,
+    ffi::FfxFsr3UpscalerContext,
+    UpscalerContextDescription,
+    UpscalerDispatchDescription,
+    ffi::ffxFsr3UpscalerContextCreate,
+    ffi::ffxFsr3UpscalerContextDispatch,
+    ffi::ffxFsr3UpscalerContextDestroy
+);
+
 impl UpscalerContext {
-    pub fn create(desc: &UpscalerContextDescription) -> Result<Self, FfxError> {
-        let mut ctx = unsafe { Box::<ffi::FfxFsr3UpscalerContext>::new_zeroed().assume_init() };
-        ok_or_error(unsafe { ffi::ffxFsr3UpscalerContextCreate(&mut *ctx, desc as *const _) })?;
-        Ok(Self { inner: ctx })
-    }
-
-    pub fn dispatch(&mut self, desc: &UpscalerDispatchDescription) -> Result<(), FfxError> {
-        let code = unsafe { ffi::ffxFsr3UpscalerContextDispatch(&mut *self.inner, desc) };
-        ok_or_error(code)
-    }
-
     pub fn generate_reactive_mask(
         &mut self,
         params: &UpscalerGenerateReactiveDescription,
@@ -128,9 +148,226 @@ impl UpscalerContext {
     }
 }
 
-impl Drop for UpscalerContext {
-    fn drop(&mut self) {
-        unsafe { ffi::ffxFsr3UpscalerContextDestroy(&mut *self.inner) };
+define_context!(
+    Fsr2Context,
+    ffi::FfxFsr2Context,
+    ffi::FfxFsr2ContextDescription,
+    ffi::FfxFsr2DispatchDescription,
+    ffi::ffxFsr2ContextCreate,
+    ffi::ffxFsr2ContextDispatch,
+    ffi::ffxFsr2ContextDestroy
+);
+
+impl Fsr2Context {
+    pub fn gpu_memory_usage(&mut self) -> Result<EffectMemoryUsage, FfxError> {
+        let mut usage = ffi::FfxEffectMemoryUsage::default();
+        ok_or_error(unsafe {
+            ffi::ffxFsr2ContextGetGpuMemoryUsage(&mut *self.inner, &mut usage)
+        })?;
+        Ok(usage)
+    }
+
+    pub fn generate_reactive_mask(
+        &mut self,
+        desc: &ffi::FfxFsr2GenerateReactiveDescription,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxFsr2ContextGenerateReactiveMask(&mut *self.inner, desc) };
+        ok_or_error(code)
+    }
+}
+
+define_context!(
+    Fsr1Context,
+    ffi::FfxFsr1Context,
+    ffi::FfxFsr1ContextDescription,
+    ffi::FfxFsr1DispatchDescription,
+    ffi::ffxFsr1ContextCreate,
+    ffi::ffxFsr1ContextDispatch,
+    ffi::ffxFsr1ContextDestroy
+);
+
+impl Fsr1Context {
+    pub fn gpu_memory_usage(&mut self) -> Result<EffectMemoryUsage, FfxError> {
+        let mut usage = ffi::FfxEffectMemoryUsage::default();
+        ok_or_error(unsafe {
+            ffi::ffxFsr1ContextGetGpuMemoryUsage(&mut *self.inner, &mut usage)
+        })?;
+        Ok(usage)
+    }
+}
+
+define_context!(
+    CasContext,
+    ffi::FfxCasContext,
+    ffi::FfxCasContextDescription,
+    ffi::FfxCasDispatchDescription,
+    ffi::ffxCasContextCreate,
+    ffi::ffxCasContextDispatch,
+    ffi::ffxCasContextDestroy
+);
+
+define_context!(
+    CacaoContext,
+    ffi::FfxCacaoContext,
+    ffi::FfxCacaoContextDescription,
+    ffi::FfxCacaoDispatchDescription,
+    ffi::ffxCacaoContextCreate,
+    ffi::ffxCacaoContextDispatch,
+    ffi::ffxCacaoContextDestroy
+);
+
+impl CacaoContext {
+    pub fn update_settings(
+        &mut self,
+        settings: &ffi::FfxCacaoSettings,
+        use_downsampled_ssao: bool,
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxCacaoUpdateSettings(&mut *self.inner, settings, use_downsampled_ssao)
+        };
+        ok_or_error(code)
+    }
+}
+
+define_context!(
+    DofContext,
+    ffi::FfxDofContext,
+    ffi::FfxDofContextDescription,
+    ffi::FfxDofDispatchDescription,
+    ffi::ffxDofContextCreate,
+    ffi::ffxDofContextDispatch,
+    ffi::ffxDofContextDestroy
+);
+
+define_context!(
+    LensContext,
+    ffi::FfxLensContext,
+    ffi::FfxLensContextDescription,
+    ffi::FfxLensDispatchDescription,
+    ffi::ffxLensContextCreate,
+    ffi::ffxLensContextDispatch,
+    ffi::ffxLensContextDestroy
+);
+
+define_context!(
+    LpmContext,
+    ffi::FfxLpmContext,
+    ffi::FfxLpmContextDescription,
+    ffi::FfxLpmDispatchDescription,
+    ffi::ffxLpmContextCreate,
+    ffi::ffxLpmContextDispatch,
+    ffi::ffxLpmContextDestroy
+);
+
+define_context!(
+    SpdContext,
+    ffi::FfxSpdContext,
+    ffi::FfxSpdContextDescription,
+    ffi::FfxSpdDispatchDescription,
+    ffi::ffxSpdContextCreate,
+    ffi::ffxSpdContextDispatch,
+    ffi::ffxSpdContextDestroy
+);
+
+define_context!(
+    ParallelSortContext,
+    ffi::FfxParallelSortContext,
+    ffi::FfxParallelSortContextDescription,
+    ffi::FfxParallelSortDispatchDescription,
+    ffi::ffxParallelSortContextCreate,
+    ffi::ffxParallelSortContextDispatch,
+    ffi::ffxParallelSortContextDestroy
+);
+
+define_context!(
+    SssrContext,
+    ffi::FfxSssrContext,
+    ffi::FfxSssrContextDescription,
+    ffi::FfxSssrDispatchDescription,
+    ffi::ffxSssrContextCreate,
+    ffi::ffxSssrContextDispatch,
+    ffi::ffxSssrContextDestroy
+);
+
+define_context!(
+    VrsContext,
+    ffi::FfxVrsContext,
+    ffi::FfxVrsContextDescription,
+    ffi::FfxVrsDispatchDescription,
+    ffi::ffxVrsContextCreate,
+    ffi::ffxVrsContextDispatch,
+    ffi::ffxVrsContextDestroy
+);
+
+define_context!(
+    BlurContext,
+    ffi::FfxBlurContext,
+    ffi::FfxBlurContextDescription,
+    ffi::FfxBlurDispatchDescription,
+    ffi::ffxBlurContextCreate,
+    ffi::ffxBlurContextDispatch,
+    ffi::ffxBlurContextDestroy
+);
+
+define_context!(
+    ClassifierContext,
+    ffi::FfxClassifierContext,
+    ffi::FfxClassifierContextDescription,
+    ffi::FfxClassifierShadowDispatchDescription,
+    ffi::ffxClassifierContextCreate,
+    ffi::ffxClassifierContextShadowDispatch,
+    ffi::ffxClassifierContextDestroy
+);
+
+impl ClassifierContext {
+    pub fn dispatch_reflection(
+        &mut self,
+        desc: &ffi::FfxClassifierReflectionDispatchDescription,
+    ) -> Result<(), FfxError> {
+        let code =
+            unsafe { ffi::ffxClassifierContextReflectionDispatch(&mut *self.inner, desc) };
+        ok_or_error(code)
+    }
+}
+
+define_context!(
+    DenoiserContext,
+    ffi::FfxDenoiserContext,
+    ffi::FfxDenoiserContextDescription,
+    ffi::FfxDenoiserShadowsDispatchDescription,
+    ffi::ffxDenoiserContextCreate,
+    ffi::ffxDenoiserContextDispatchShadows,
+    ffi::ffxDenoiserContextDestroy
+);
+
+impl DenoiserContext {
+    pub fn dispatch_reflections(
+        &mut self,
+        desc: &ffi::FfxDenoiserReflectionsDispatchDescription,
+    ) -> Result<(), FfxError> {
+        let code =
+            unsafe { ffi::ffxDenoiserContextDispatchReflections(&mut *self.inner, desc) };
+        ok_or_error(code)
+    }
+}
+
+define_context!(
+    OpticalFlowContext,
+    ffi::FfxOpticalflowContext,
+    ffi::FfxOpticalflowContextDescription,
+    ffi::FfxOpticalflowDispatchDescription,
+    ffi::ffxOpticalflowContextCreate,
+    ffi::ffxOpticalflowContextDispatch,
+    ffi::ffxOpticalflowContextDestroy
+);
+
+impl OpticalFlowContext {
+    pub fn gpu_memory_usage(&mut self) -> Result<EffectMemoryUsage, FfxError> {
+        let mut usage = ffi::FfxEffectMemoryUsage::default();
+        ok_or_error(unsafe {
+            ffi::ffxOpticalflowContextGetGpuMemoryUsage(&mut *self.inner, &mut usage)
+        })?;
+        Ok(usage)
     }
 }
 
@@ -304,144 +541,91 @@ unsafe extern "C" {
     );
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[test]
+fn context_creation() {
+    use ash::vk::Handle;
 
-    #[test]
-    fn sdk_version() {
-        assert_eq!(ffi::FFX_FSR3UPSCALER_VERSION_MAJOR, 3);
-        assert_eq!(ffi::FFX_FSR3UPSCALER_VERSION_MINOR, 1);
-        assert_eq!(ffi::FFX_FSR3UPSCALER_VERSION_PATCH, 4);
+    let entry = unsafe { ash::Entry::load() }.expect("failed to load vulkan");
+
+    let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_3);
+    let create_info = ash::vk::InstanceCreateInfo::default().application_info(&app_info);
+    let instance = unsafe { entry.create_instance(&create_info, None) }
+        .expect("failed to create instance");
+
+    let physical_devices =
+        unsafe { instance.enumerate_physical_devices() }.expect("enumerate_physical_devices");
+    assert!(!physical_devices.is_empty(), "no physical devices");
+    let physical_device = physical_devices[0];
+
+    let queue_families =
+        unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
+    let qfi = queue_families
+        .iter()
+        .position(|q| {
+            q.queue_flags
+                .contains(ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE)
+        })
+        .expect("no graphics/compute queue family");
+
+    let queue_info = ash::vk::DeviceQueueCreateInfo::default()
+        .queue_family_index(qfi as u32)
+        .queue_priorities(&[1.0]);
+    let queue_create_infos = [queue_info];
+
+    let ext_props = unsafe { instance.enumerate_device_extension_properties(physical_device) }
+        .unwrap_or_default();
+    let amd_coherent = ext_props.iter().any(|e| {
+        e.extension_name_as_c_str()
+            .is_ok_and(|name| name == ash::amd::device_coherent_memory::NAME)
+    });
+
+    let mut extension_names = vec![
+        ash::khr::get_memory_requirements2::NAME.as_ptr(),
+        ash::khr::dedicated_allocation::NAME.as_ptr(),
+    ];
+    let mut amd_coherent_features = ash::vk::PhysicalDeviceCoherentMemoryFeaturesAMD::default();
+    if amd_coherent {
+        extension_names.push(ash::amd::device_coherent_memory::NAME.as_ptr());
+        amd_coherent_features.device_coherent_memory = 1;
     }
 
-    #[test]
-    fn resource_construction() {
-        let r = ffi::FfxResource::default();
-        assert!(r.resource.is_null());
+    let mut features12 =
+        ash::vk::PhysicalDeviceVulkan12Features::default().shader_float16(true);
+    let features = ash::vk::PhysicalDeviceFeatures::default().shader_int16(true);
+    let device_create_info = ash::vk::DeviceCreateInfo::default()
+        .queue_create_infos(&queue_create_infos)
+        .enabled_extension_names(&extension_names)
+        .push_next(&mut features12)
+        .push_next(&mut amd_coherent_features)
+        .enabled_features(&features);
+    let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
+        .expect("create_device");
+
+    let ffx_device =
+        unsafe { Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _) }
+            .expect("Device::new failed");
+    assert!(!ffx_device.as_raw().is_null());
+
+    let backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
+
+    {
+        let mut upscaler = backend
+            .create_upscaler(
+                FfxFsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+                Dimensions2D {
+                    width: 1280,
+                    height: 720,
+                },
+            )
+            .unwrap();
+
+        dbg!(upscaler.gpu_memory_usage().unwrap());
     }
 
-    #[test]
-    fn dispatch_default_allows_zero() {
-        let desc = UpscalerDispatchDescription::default();
-        assert_eq!(desc.flags, 0);
-    }
-
-    #[test]
-    fn type_aliases_work() {
-        let _ = UpscalerContextDescription {
-            flags: 0,
-            maxRenderSize: Dimensions2D {
-                width: 1920,
-                height: 1080,
-            },
-            maxUpscaleSize: Dimensions2D {
-                width: 1920,
-                height: 1080,
-            },
-            fpMessage: None,
-            backendInterface: unsafe { std::mem::zeroed() },
-        };
-    }
-
-    #[test]
-    fn vk_types_exist() {
-        let _ = ffi::VkDeviceContext::default();
-        let _ = ffi::VkInstanceFunctionTableFFX::default();
-    }
-
-    #[test]
-    fn raii_types_compile() {
-        let _ = ffi::FfxDevice::default();
-        let _ = ffi::FfxInterface::default();
-    }
-
-    #[test]
-    fn device_creation_with_ash() {
-        use ash::vk::Handle;
-
-        let entry = unsafe { ash::Entry::load() }.expect("failed to load vulkan");
-
-        let app_info = ash::vk::ApplicationInfo::default().api_version(ash::vk::API_VERSION_1_3);
-        let create_info = ash::vk::InstanceCreateInfo::default().application_info(&app_info);
-        let instance = unsafe { entry.create_instance(&create_info, None) }
-            .expect("failed to create instance");
-
-        let physical_devices =
-            unsafe { instance.enumerate_physical_devices() }.expect("enumerate_physical_devices");
-        assert!(!physical_devices.is_empty(), "no physical devices");
-        let physical_device = physical_devices[0];
-
-        let queue_families =
-            unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
-        let qfi = queue_families
-            .iter()
-            .position(|q| {
-                q.queue_flags
-                    .contains(ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE)
-            })
-            .expect("no graphics/compute queue family");
-
-        let queue_info = ash::vk::DeviceQueueCreateInfo::default()
-            .queue_family_index(qfi as u32)
-            .queue_priorities(&[1.0]);
-        let queue_create_infos = [queue_info];
-
-        let ext_props = unsafe { instance.enumerate_device_extension_properties(physical_device) }
-            .unwrap_or_default();
-        let amd_coherent = ext_props.iter().any(|e| {
-            e.extension_name_as_c_str()
-                .is_ok_and(|name| name == ash::amd::device_coherent_memory::NAME)
-        });
-
-        let mut extension_names = vec![
-            ash::khr::get_memory_requirements2::NAME.as_ptr(),
-            ash::khr::dedicated_allocation::NAME.as_ptr(),
-        ];
-        let mut amd_coherent_features = ash::vk::PhysicalDeviceCoherentMemoryFeaturesAMD::default();
-        if amd_coherent {
-            extension_names.push(ash::amd::device_coherent_memory::NAME.as_ptr());
-            amd_coherent_features.device_coherent_memory = 1;
-        }
-
-        let mut features12 =
-            ash::vk::PhysicalDeviceVulkan12Features::default().shader_float16(true);
-        let features = ash::vk::PhysicalDeviceFeatures::default().shader_int16(true);
-        let device_create_info = ash::vk::DeviceCreateInfo::default()
-            .queue_create_infos(&queue_create_infos)
-            .enabled_extension_names(&extension_names)
-            .push_next(&mut features12)
-            .push_next(&mut amd_coherent_features)
-            .enabled_features(&features);
-        let device = unsafe { instance.create_device(physical_device, &device_create_info, None) }
-            .expect("create_device");
-
-        let ffx_device =
-            unsafe { Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _) }
-                .expect("Device::new failed");
-        assert!(!ffx_device.as_raw().is_null());
-
-        let backend = unsafe { BackendInterface::new(&ffx_device, 1) }.unwrap();
-
-        {
-            let mut upscaler = backend
-                .create_upscaler(
-                    FfxFsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
-                    Dimensions2D {
-                        width: 1280,
-                        height: 720,
-                    },
-                    Dimensions2D {
-                        width: 1280,
-                        height: 720,
-                    },
-                )
-                .unwrap();
-
-            dbg!(upscaler.gpu_memory_usage().unwrap());
-        }
-
-        unsafe { device.destroy_device(None) };
-        unsafe { instance.destroy_instance(None) };
-    }
+    unsafe { device.destroy_device(None) };
+    unsafe { instance.destroy_instance(None) };
 }

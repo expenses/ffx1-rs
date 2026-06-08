@@ -65,7 +65,7 @@ pub fn ok_or_error(code: i32) -> Result<(), FfxError> {
 }
 
 macro_rules! define_context {
-    ($name:ident, $ctx:ty, $desc:ty, $dispatch_desc:ty, $create:path, $dispatch:path, $destroy:path) => {
+    ($name:ident, $ctx:ty, $desc:ty, $create:path, $destroy:path) => {
         #[derive(Debug)]
         pub struct $name {
             inner: Box<$ctx>,
@@ -77,11 +77,6 @@ macro_rules! define_context {
                 ok_or_error(unsafe { $create(&mut *ctx, description as *const _ as *mut _) })?;
                 Ok(Self { inner: ctx })
             }
-
-            pub fn dispatch(&mut self, desc: &$dispatch_desc) -> Result<(), FfxError> {
-                let code = unsafe { $dispatch(&mut *self.inner, desc) };
-                ok_or_error(code)
-            }
         }
 
         impl Drop for $name {
@@ -90,10 +85,20 @@ macro_rules! define_context {
             }
         }
     };
+    ($name:ident, $ctx:ty, $desc:ty, $dispatch_desc:ty, $create:path, $dispatch:path, $destroy:path) => {
+        define_context!($name, $ctx, $desc, $create, $destroy);
+
+        impl $name {
+            pub fn dispatch(&mut self, desc: &$dispatch_desc) -> Result<(), FfxError> {
+                let code = unsafe { $dispatch(&mut *self.inner, desc) };
+                ok_or_error(code)
+            }
+        }
+    };
 }
 
 define_context!(
-    UpscalerContext,
+    Fsr3UpscalerContext,
     ffi::FfxFsr3UpscalerContext,
     UpscalerContextDescription,
     UpscalerDispatchDescription,
@@ -102,7 +107,7 @@ define_context!(
     ffi::ffxFsr3UpscalerContextDestroy
 );
 
-impl UpscalerContext {
+impl Fsr3UpscalerContext {
     pub fn generate_reactive_mask(
         &mut self,
         params: &UpscalerGenerateReactiveDescription,
@@ -365,6 +370,207 @@ impl OpticalFlowContext {
     }
 }
 
+define_context!(
+    BrixelizerGIContext,
+    ffi::FfxBrixelizerGIContext,
+    ffi::FfxBrixelizerGIContextDescription,
+    ffi::ffxBrixelizerGIContextCreate,
+    ffi::ffxBrixelizerGIContextDestroy
+);
+
+impl BrixelizerGIContext {
+    pub fn dispatch(
+        &mut self,
+        desc: &ffi::FfxBrixelizerGIDispatchDescription,
+        cmd_list: ffi::FfxCommandList,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBrixelizerGIContextDispatch(&mut *self.inner, desc, cmd_list) };
+        ok_or_error(code)
+    }
+
+    pub fn debug_visualization(
+        &mut self,
+        desc: &ffi::FfxBrixelizerGIDebugDescription,
+        cmd_list: ffi::FfxCommandList,
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBrixelizerGIContextDebugVisualization(&mut *self.inner, desc, cmd_list)
+        };
+        ok_or_error(code)
+    }
+}
+
+#[derive(Debug)]
+pub struct BrixelizerContext {
+    inner: Box<ffi::FfxBrixelizerContext>,
+}
+
+impl BrixelizerContext {
+    pub fn create(description: &ffi::FfxBrixelizerContextDescription) -> Result<Self, FfxError> {
+        let mut ctx = unsafe { Box::<ffi::FfxBrixelizerContext>::new_zeroed().assume_init() };
+        ok_or_error(unsafe { ffi::ffxBrixelizerContextCreate(description, &mut *ctx) })?;
+        Ok(Self { inner: ctx })
+    }
+
+    pub fn bake_update(
+        &mut self,
+        desc: &ffi::FfxBrixelizerUpdateDescription,
+        out_desc: &mut ffi::FfxBrixelizerBakedUpdateDescription,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBrixelizerBakeUpdate(&mut *self.inner, desc, out_desc) };
+        ok_or_error(code)
+    }
+
+    pub fn update(
+        &mut self,
+        desc: &mut ffi::FfxBrixelizerBakedUpdateDescription,
+        scratch_buffer: ffi::FfxResource,
+        command_list: ffi::FfxCommandList,
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBrixelizerUpdate(&mut *self.inner, desc, scratch_buffer, command_list)
+        };
+        ok_or_error(code)
+    }
+
+    pub fn get_context_info(
+        &mut self,
+        context_info: &mut ffi::FfxBrixelizerContextInfo,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBrixelizerGetContextInfo(&mut *self.inner, context_info) };
+        ok_or_error(code)
+    }
+
+    pub fn register_buffers(
+        &mut self,
+        buffer_descs: &[ffi::FfxBrixelizerBufferDescription],
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBrixelizerRegisterBuffers(
+                &mut *self.inner,
+                buffer_descs.as_ptr(),
+                buffer_descs.len() as u32,
+            )
+        };
+        ok_or_error(code)
+    }
+
+    pub fn unregister_buffers(&mut self, indices: &[u32]) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBrixelizerUnregisterBuffers(
+                &mut *self.inner,
+                indices.as_ptr(),
+                indices.len() as u32,
+            )
+        };
+        ok_or_error(code)
+    }
+
+    pub fn create_instances(
+        &mut self,
+        descs: &[ffi::FfxBrixelizerInstanceDescription],
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBrixelizerCreateInstances(&mut *self.inner, descs.as_ptr(), descs.len() as u32)
+        };
+        ok_or_error(code)
+    }
+
+    pub fn delete_instances(
+        &mut self,
+        instance_ids: &[ffi::FfxBrixelizerInstanceID],
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBrixelizerDeleteInstances(
+                &mut *self.inner,
+                instance_ids.as_ptr(),
+                instance_ids.len() as u32,
+            )
+        };
+        ok_or_error(code)
+    }
+
+    pub fn get_raw_context(
+        &mut self,
+        out_context: &mut *mut ffi::FfxBrixelizerRawContext,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBrixelizerGetRawContext(&mut *self.inner, out_context) };
+        ok_or_error(code)
+    }
+}
+
+impl Drop for BrixelizerContext {
+    fn drop(&mut self) {
+        unsafe { ffi::ffxBrixelizerContextDestroy(&mut *self.inner) };
+    }
+}
+
+define_context!(
+    BreadcrumbsContext,
+    ffi::FfxBreadcrumbsContext,
+    ffi::FfxBreadcrumbsContextDescription,
+    ffi::ffxBreadcrumbsContextCreate,
+    ffi::ffxBreadcrumbsContextDestroy
+);
+
+impl BreadcrumbsContext {
+    pub fn start_frame(&mut self) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBreadcrumbsStartFrame(&mut *self.inner) };
+        ok_or_error(code)
+    }
+
+    pub fn register_command_list(
+        &mut self,
+        desc: &ffi::FfxBreadcrumbsCommandListDescription,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBreadcrumbsRegisterCommandList(&mut *self.inner, desc) };
+        ok_or_error(code)
+    }
+
+    pub fn register_pipeline(
+        &mut self,
+        desc: &ffi::FfxBreadcrumbsPipelineStateDescription,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBreadcrumbsRegisterPipeline(&mut *self.inner, desc) };
+        ok_or_error(code)
+    }
+
+    pub fn set_pipeline(
+        &mut self,
+        command_list: ffi::FfxCommandList,
+        pipeline: ffi::FfxPipeline,
+    ) -> Result<(), FfxError> {
+        let code =
+            unsafe { ffi::ffxBreadcrumbsSetPipeline(&mut *self.inner, command_list, pipeline) };
+        ok_or_error(code)
+    }
+
+    pub fn begin_marker(
+        &mut self,
+        command_list: ffi::FfxCommandList,
+        marker_type: ffi::FfxBreadcrumbsMarkerType,
+        name: &ffi::FfxBreadcrumbsNameTag,
+    ) -> Result<(), FfxError> {
+        let code = unsafe {
+            ffi::ffxBreadcrumbsBeginMarker(&mut *self.inner, command_list, marker_type, name)
+        };
+        ok_or_error(code)
+    }
+
+    pub fn end_marker(&mut self, command_list: ffi::FfxCommandList) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBreadcrumbsEndMarker(&mut *self.inner, command_list) };
+        ok_or_error(code)
+    }
+
+    pub fn print_status(
+        &mut self,
+        status: &mut ffi::FfxBreadcrumbsMarkersStatus,
+    ) -> Result<(), FfxError> {
+        let code = unsafe { ffi::ffxBreadcrumbsPrintStatus(&mut *self.inner, status) };
+        ok_or_error(code)
+    }
+}
+
 /// A RAII wrapper around an `FfxDevice` obtained from a [`VkDeviceContext`].
 ///
 /// The Vulkan backend stores a single global copy of the `VkDeviceContext`, so
@@ -459,15 +665,15 @@ impl BackendInterface {
         &mut self.inner
     }
 
-    /// Creates an [`UpscalerContext`] from this backend interface.
+    /// Creates an [`Fsr3UpscalerContext`] from this backend interface.
     ///
-    /// The [`BackendInterface`] must outlive the returned [`UpscalerContext`].
-    pub fn create_upscaler(
+    /// The [`BackendInterface`] must outlive the returned [`Fsr3UpscalerContext`].
+    pub fn create_fsr3_upscaler(
         &self,
         flags: u32,
         render_size: Dimensions2D,
         upscale_size: Dimensions2D,
-    ) -> Result<UpscalerContext, FfxError> {
+    ) -> Result<Fsr3UpscalerContext, FfxError> {
         let desc = UpscalerContextDescription {
             flags,
             maxRenderSize: render_size,
@@ -475,7 +681,253 @@ impl BackendInterface {
             fpMessage: None,
             backendInterface: *self.as_ref(),
         };
-        UpscalerContext::create(&desc)
+        Fsr3UpscalerContext::create(&desc)
+    }
+
+    /// Creates an [`Fsr2Context`] from this backend interface.
+    pub fn create_fsr2(
+        &self,
+        flags: u32,
+        render_size: Dimensions2D,
+        display_size: Dimensions2D,
+    ) -> Result<Fsr2Context, FfxError> {
+        let desc = ffi::FfxFsr2ContextDescription {
+            flags,
+            maxRenderSize: render_size,
+            displaySize: display_size,
+            fpMessage: None,
+            backendInterface: *self.as_ref(),
+        };
+        Fsr2Context::create(&desc)
+    }
+
+    /// Creates an [`Fsr1Context`] from this backend interface.
+    pub fn create_fsr1(
+        &self,
+        flags: u32,
+        output_format: ffi::FfxSurfaceFormat,
+        render_size: Dimensions2D,
+        display_size: Dimensions2D,
+    ) -> Result<Fsr1Context, FfxError> {
+        let desc = ffi::FfxFsr1ContextDescription {
+            flags,
+            outputFormat: output_format,
+            maxRenderSize: render_size,
+            displaySize: display_size,
+            backendInterface: *self.as_ref(),
+        };
+        Fsr1Context::create(&desc)
+    }
+
+    /// Creates a [`CasContext`] from this backend interface.
+    pub fn create_cas(
+        &self,
+        flags: u32,
+        color_space: ffi::FfxCasColorSpaceConversion,
+        render_size: Dimensions2D,
+        display_size: Dimensions2D,
+    ) -> Result<CasContext, FfxError> {
+        let desc = ffi::FfxCasContextDescription {
+            flags,
+            colorSpaceConversion: color_space,
+            maxRenderSize: render_size,
+            displaySize: display_size,
+            backendInterface: *self.as_ref(),
+        };
+        CasContext::create(&desc)
+    }
+
+    /// Creates a [`LpmContext`] from this backend interface.
+    pub fn create_lpm(&self, flags: u32) -> Result<LpmContext, FfxError> {
+        let desc = ffi::FfxLpmContextDescription {
+            flags,
+            backendInterface: *self.as_ref(),
+        };
+        LpmContext::create(&desc)
+    }
+
+    /// Creates a [`SpdContext`] from this backend interface.
+    pub fn create_spd(
+        &self,
+        flags: u32,
+        downsample_filter: ffi::FfxSpdDownsampleFilter,
+    ) -> Result<SpdContext, FfxError> {
+        let desc = ffi::FfxSpdContextDescription {
+            flags,
+            downsampleFilter: downsample_filter,
+            backendInterface: *self.as_ref(),
+        };
+        SpdContext::create(&desc)
+    }
+
+    /// Creates a [`LensContext`] from this backend interface.
+    pub fn create_lens(
+        &self,
+        flags: u32,
+        output_format: ffi::FfxSurfaceFormat,
+        float_precision: ffi::FfxLensFloatPrecision,
+    ) -> Result<LensContext, FfxError> {
+        let desc = ffi::FfxLensContextDescription {
+            flags,
+            outputFormat: output_format,
+            floatPrecision: float_precision,
+            backendInterface: *self.as_ref(),
+        };
+        LensContext::create(&desc)
+    }
+
+    /// Creates a [`CacaoContext`] from this backend interface.
+    pub fn create_cacao(
+        &self,
+        width: u32,
+        height: u32,
+        use_downsampled_ssao: bool,
+    ) -> Result<CacaoContext, FfxError> {
+        let desc = ffi::FfxCacaoContextDescription {
+            width,
+            height,
+            useDownsampledSsao: use_downsampled_ssao,
+            backendInterface: *self.as_ref(),
+        };
+        CacaoContext::create(&desc)
+    }
+
+    /// Creates a [`BrixelizerGIContext`] from this backend interface.
+    pub fn create_brixelizer_gi(
+        &self,
+        flags: ffi::FfxBrixelizerGIFlags::Type,
+        internal_resolution: ffi::FfxBrixelizerGIInternalResolution,
+        display_size: Dimensions2D,
+    ) -> Result<BrixelizerGIContext, FfxError> {
+        let desc = ffi::FfxBrixelizerGIContextDescription {
+            flags,
+            internalResolution: internal_resolution,
+            displaySize: display_size,
+            backendInterface: *self.as_ref(),
+        };
+        BrixelizerGIContext::create(&desc)
+    }
+
+    /// Creates a [`ParallelSortContext`] from this backend interface.
+    pub fn create_parallel_sort(
+        &self,
+        flags: u32,
+        max_entries: u32,
+    ) -> Result<ParallelSortContext, FfxError> {
+        let desc = ffi::FfxParallelSortContextDescription {
+            flags,
+            maxEntries: max_entries,
+            backendInterface: *self.as_ref(),
+        };
+        ParallelSortContext::create(&desc)
+    }
+
+    /// Creates a [`DofContext`] from this backend interface.
+    pub fn create_dof(
+        &self,
+        flags: u32,
+        quality: u32,
+        resolution: Dimensions2D,
+        coc_limit_factor: f32,
+    ) -> Result<DofContext, FfxError> {
+        let desc = ffi::FfxDofContextDescription {
+            flags,
+            quality,
+            resolution,
+            cocLimitFactor: coc_limit_factor,
+            backendInterface: *self.as_ref(),
+        };
+        DofContext::create(&desc)
+    }
+
+    /// Creates a [`SssrContext`] from this backend interface.
+    pub fn create_sssr(
+        &self,
+        flags: u32,
+        render_size: Dimensions2D,
+        normals_format: ffi::FfxSurfaceFormat,
+    ) -> Result<SssrContext, FfxError> {
+        let desc = ffi::FfxSssrContextDescription {
+            flags,
+            renderSize: render_size,
+            normalsHistoryBufferFormat: normals_format,
+            backendInterface: *self.as_ref(),
+        };
+        SssrContext::create(&desc)
+    }
+
+    /// Creates a [`VrsContext`] from this backend interface.
+    pub fn create_vrs(
+        &self,
+        flags: u32,
+        shading_rate_tile_size: u32,
+    ) -> Result<VrsContext, FfxError> {
+        let desc = ffi::FfxVrsContextDescription {
+            flags,
+            shadingRateImageTileSize: shading_rate_tile_size,
+            backendInterface: *self.as_ref(),
+        };
+        VrsContext::create(&desc)
+    }
+
+    /// Creates a [`ClassifierContext`] from this backend interface.
+    pub fn create_classifier(
+        &self,
+        flags: u32,
+        resolution: Dimensions2D,
+    ) -> Result<ClassifierContext, FfxError> {
+        let desc = ffi::FfxClassifierContextDescription {
+            flags,
+            resolution,
+            backendInterface: *self.as_ref(),
+        };
+        ClassifierContext::create(&desc)
+    }
+
+    /// Creates a [`DenoiserContext`] from this backend interface.
+    pub fn create_denoiser(
+        &self,
+        flags: u32,
+        window_size: Dimensions2D,
+        normals_format: ffi::FfxSurfaceFormat,
+    ) -> Result<DenoiserContext, FfxError> {
+        let desc = ffi::FfxDenoiserContextDescription {
+            flags,
+            windowSize: window_size,
+            normalsHistoryBufferFormat: normals_format,
+            backendInterface: *self.as_ref(),
+        };
+        DenoiserContext::create(&desc)
+    }
+
+    /// Creates an [`OpticalFlowContext`] from this backend interface.
+    pub fn create_optical_flow(
+        &self,
+        flags: u32,
+        resolution: Dimensions2D,
+    ) -> Result<OpticalFlowContext, FfxError> {
+        let desc = ffi::FfxOpticalflowContextDescription {
+            flags,
+            resolution,
+            backendInterface: *self.as_ref(),
+        };
+        OpticalFlowContext::create(&desc)
+    }
+
+    /// Creates a [`BlurContext`] from this backend interface.
+    pub fn create_blur(
+        &self,
+        kernel_permutations: ffi::FfxBlurKernelPermutations,
+        kernel_sizes: ffi::FfxBlurKernelSizes,
+        float_precision: ffi::FfxBlurFloatPrecision,
+    ) -> Result<BlurContext, FfxError> {
+        let desc = ffi::FfxBlurContextDescription {
+            kernelPermutations: kernel_permutations,
+            kernelSizes: kernel_sizes,
+            floatPrecision: float_precision,
+            backendInterface: *self.as_ref(),
+        };
+        BlurContext::create(&desc)
     }
 }
 
@@ -609,7 +1061,7 @@ fn context_creation() {
 
     {
         let mut upscaler = backend
-            .create_upscaler(
+            .create_fsr3_upscaler(
                 FfxFsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
                 Dimensions2D {
                     width: 1280,
@@ -625,156 +1077,161 @@ fn context_creation() {
         dbg!(upscaler.gpu_memory_usage()).unwrap();
     }
 
-    LpmContext::create(&ffi::FfxLpmContextDescription {
-        flags: 0,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend.create_lpm(0).unwrap();
 
-    SpdContext::create(&ffi::FfxSpdContextDescription {
-        flags: 0,
-        downsampleFilter: ffi::FfxSpdDownsampleFilter::FFX_SPD_DOWNSAMPLE_FILTER_MEAN,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_spd(
+            0,
+            ffi::FfxSpdDownsampleFilter::FFX_SPD_DOWNSAMPLE_FILTER_MEAN,
+        )
+        .unwrap();
 
-    ParallelSortContext::create(&ffi::FfxParallelSortContextDescription {
-        flags: 0,
-        maxEntries: 1024,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend.create_parallel_sort(0, 1024).unwrap();
 
-    CasContext::create(&ffi::FfxCasContextDescription {
-        flags: 0,
-        colorSpaceConversion: ffi::FfxCasColorSpaceConversion::FFX_CAS_COLOR_SPACE_LINEAR,
-        maxRenderSize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        displaySize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_cas(
+            0,
+            ffi::FfxCasColorSpaceConversion::FFX_CAS_COLOR_SPACE_LINEAR,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
 
-    LensContext::create(&ffi::FfxLensContextDescription {
-        flags: 0,
-        outputFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
-        floatPrecision: ffi::FfxLensFloatPrecision::FFX_LENS_FLOAT_PRECISION_32BIT,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_lens(
+            0,
+            ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+            ffi::FfxLensFloatPrecision::FFX_LENS_FLOAT_PRECISION_32BIT,
+        )
+        .unwrap();
 
-    Fsr2Context::create(&ffi::FfxFsr2ContextDescription {
-        flags: 0,
-        maxRenderSize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        displaySize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        fpMessage: None,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_fsr2(
+            0,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
 
-    Fsr1Context::create(&ffi::FfxFsr1ContextDescription {
-        flags: 0,
-        outputFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
-        maxRenderSize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        displaySize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_fsr1(
+            0,
+            ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
 
-    CacaoContext::create(&ffi::FfxCacaoContextDescription {
-        width: 1280,
-        height: 720,
-        useDownsampledSsao: false,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend.create_cacao(1280, 720, false).unwrap();
 
-    DofContext::create(&ffi::FfxDofContextDescription {
-        flags: 0,
-        quality: 5,
-        resolution: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        backendInterface: *backend.as_ref(),
-        cocLimitFactor: 1.0,
-    })
-    .unwrap();
+    backend
+        .create_dof(
+            0,
+            5,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+            1.0,
+        )
+        .unwrap();
 
-    SssrContext::create(&ffi::FfxSssrContextDescription {
-        flags: 0,
-        renderSize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        normalsHistoryBufferFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_sssr(
+            0,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+            ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+        )
+        .unwrap();
 
-    VrsContext::create(&ffi::FfxVrsContextDescription {
-        flags: 0,
-        shadingRateImageTileSize: 16,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend.create_vrs(0, 16).unwrap();
 
-    ClassifierContext::create(&ffi::FfxClassifierContextDescription {
-        flags: ffi::FfxClassifierInitializationFlagBits::FFX_CLASSIFIER_SHADOW,
-        resolution: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_classifier(
+            ffi::FfxClassifierInitializationFlagBits::FFX_CLASSIFIER_SHADOW,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
 
-    DenoiserContext::create(&ffi::FfxDenoiserContextDescription {
-        flags: ffi::FfxDenoiserInitializationFlagBits::FFX_DENOISER_SHADOWS,
-        windowSize: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-        normalsHistoryBufferFormat: ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_denoiser(
+            ffi::FfxDenoiserInitializationFlagBits::FFX_DENOISER_SHADOWS,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+            ffi::FfxSurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
+        )
+        .unwrap();
 
-    OpticalFlowContext::create(&ffi::FfxOpticalflowContextDescription {
-        backendInterface: *backend.as_ref(),
-        flags: 0,
-        resolution: Dimensions2D {
-            width: 1280,
-            height: 720,
-        },
-    })
-    .unwrap();
+    backend
+        .create_optical_flow(
+            0,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
 
-    BlurContext::create(&ffi::FfxBlurContextDescription {
-        kernelPermutations: ffi::FFX_BLUR_KERNEL_PERMUTATIONS_ALL,
-        kernelSizes: ffi::FfxBlurKernelSize::FFX_BLUR_KERNEL_SIZE_3x3 as u32
-            | ffi::FfxBlurKernelSize::FFX_BLUR_KERNEL_SIZE_5x5 as u32,
-        floatPrecision: ffi::FfxBlurFloatPrecision::FFX_BLUR_FLOAT_PRECISION_32BIT,
-        backendInterface: *backend.as_ref(),
-    })
-    .unwrap();
+    backend
+        .create_blur(
+            ffi::FFX_BLUR_KERNEL_PERMUTATIONS_ALL,
+            ffi::FfxBlurKernelSize::FFX_BLUR_KERNEL_SIZE_3x3 as u32
+                | ffi::FfxBlurKernelSize::FFX_BLUR_KERNEL_SIZE_5x5 as u32,
+            ffi::FfxBlurFloatPrecision::FFX_BLUR_FLOAT_PRECISION_32BIT,
+        )
+        .unwrap();
+
+    backend
+        .create_brixelizer_gi(
+            0,
+            ffi::FfxBrixelizerGIInternalResolution::FFX_BRIXELIZER_GI_INTERNAL_RESOLUTION_NATIVE,
+            Dimensions2D {
+                width: 1280,
+                height: 720,
+            },
+        )
+        .unwrap();
+
+    // // BreadcrumbsContext requires proper allocation callbacks; skipped for now.
+    // {
+    //     let queue_type: u32 = 0;
+    //     let _bc = BreadcrumbsContext::create(&ffi::FfxBreadcrumbsContextDescription {
+    //         flags: 0,
+    //         frameHistoryLength: 2,
+    //         maxMarkersPerMemoryBlock: 1024,
+    //         usedGpuQueuesCount: 1,
+    //         pUsedGpuQueues: &queue_type as *const _ as *mut _,
+    //         allocCallbacks: unsafe { std::mem::zeroed() },
+    //         backendInterface: *backend.as_ref(),
+    //     })
+    //     .unwrap();
+    // }
 
     unsafe { device.destroy_device(None) };
     unsafe { instance.destroy_instance(None) };

@@ -12,6 +12,7 @@ doctest = false
 
 [dev-dependencies]
 ash = "0.38"
+libc = "0.2"
 
 [build-dependencies]
 cmake = "0.1"

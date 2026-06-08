@@ -1039,7 +1039,8 @@ fn context_creation() {
     let mut features12 = ash::vk::PhysicalDeviceVulkan12Features::default()
         .shader_float16(true)
         .shader_sampled_image_array_non_uniform_indexing(true)
-        .shader_subgroup_extended_types(true);
+        .shader_subgroup_extended_types(true)
+        .shader_storage_buffer_array_non_uniform_indexing(true);
     let features = ash::vk::PhysicalDeviceFeatures::default()
         .shader_int16(true)
         .shader_image_gather_extended(true);
@@ -1218,20 +1219,24 @@ fn context_creation() {
         )
         .unwrap();
 
-    // // BreadcrumbsContext requires proper allocation callbacks; skipped for now.
-    // {
-    //     let queue_type: u32 = 0;
-    //     let _bc = BreadcrumbsContext::create(&ffi::FfxBreadcrumbsContextDescription {
-    //         flags: 0,
-    //         frameHistoryLength: 2,
-    //         maxMarkersPerMemoryBlock: 1024,
-    //         usedGpuQueuesCount: 1,
-    //         pUsedGpuQueues: &queue_type as *const _ as *mut _,
-    //         allocCallbacks: unsafe { std::mem::zeroed() },
-    //         backendInterface: *backend.as_ref(),
-    //     })
-    //     .unwrap();
-    // }
+    {
+        let alloc_callbacks = ffi::FfxAllocationCallbacks {
+            fpAlloc: Some(libc::malloc),
+            fpRealloc: Some(libc::realloc),
+            fpFree: Some(libc::free),
+        };
+        let queue_type: u32 = 0;
+        let _bc = BreadcrumbsContext::create(&ffi::FfxBreadcrumbsContextDescription {
+            flags: 0,
+            frameHistoryLength: 2,
+            maxMarkersPerMemoryBlock: 1024,
+            usedGpuQueuesCount: 1,
+            pUsedGpuQueues: &queue_type as *const _ as *mut _,
+            allocCallbacks: alloc_callbacks,
+            backendInterface: *backend.as_ref(),
+        })
+        .unwrap();
+    }
 
     unsafe { device.destroy_device(None) };
     unsafe { instance.destroy_instance(None) };

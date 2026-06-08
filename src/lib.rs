@@ -72,11 +72,11 @@ pub fn resource_from_vk_buffer(
     name: &str,
 ) -> ffi::Resource {
     let resource_desc = ffi::ResourceDescription {
-        type_: ffi::ResourceType::FFX_RESOURCE_TYPE_BUFFER,
+        type_: ffi::ResourceType::BUFFER,
         format: ffi::SurfaceFormat::UNKNOWN,
-        __bindgen_anon_1: ffi::ResourceDescription__bindgen_ty_1 { size },
-        __bindgen_anon_2: ffi::ResourceDescription__bindgen_ty_2 { stride },
-        __bindgen_anon_3: ffi::ResourceDescription__bindgen_ty_3 { alignment },
+        __bindgen_anon_1: ffi::SizeOrWidth { size },
+        __bindgen_anon_2: ffi::HeightOrStride { stride },
+        __bindgen_anon_3: ffi::DepthOrAlignment { alignment },
         mipCount: 1,
         flags,
         usage,
@@ -1035,9 +1035,8 @@ mod tests {
                 let qfi = queue_families
                     .iter()
                     .position(|q| {
-                        q.queue_flags.contains(
-                            ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE,
-                        )
+                        q.queue_flags
+                            .contains(ash::vk::QueueFlags::GRAPHICS | ash::vk::QueueFlags::COMPUTE)
                     })
                     .expect("no graphics/compute queue family") as u32;
 
@@ -1088,10 +1087,10 @@ mod tests {
                     Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _)
                         .expect("Device::new failed");
 
-            Self {
-                _entry: entry,
-                instance,
-                device,
+                Self {
+                    _entry: entry,
+                    instance,
+                    device,
                     physical_device,
                     qfi,
                     ffx_device,
@@ -1142,10 +1141,7 @@ mod tests {
         backend.create_lpm().unwrap();
 
         backend
-            .create_spd(
-                SpdInitializationFlagBits(0),
-                SpdDownsampleFilter::MEAN,
-            )
+            .create_spd(SpdInitializationFlagBits(0), SpdDownsampleFilter::MEAN)
             .unwrap();
 
         backend
@@ -1323,8 +1319,7 @@ mod tests {
             .size(buffer_size)
             .usage(ash::vk::BufferUsageFlags::STORAGE_BUFFER)
             .sharing_mode(ash::vk::SharingMode::EXCLUSIVE);
-        let buffer = unsafe { td.device.create_buffer(&buffer_info, None) }
-            .expect("create_buffer");
+        let buffer = unsafe { td.device.create_buffer(&buffer_info, None) }.expect("create_buffer");
 
         let mem_reqs = unsafe { td.device.get_buffer_memory_requirements(buffer) };
 
@@ -1347,15 +1342,19 @@ mod tests {
         let alloc_info = ash::vk::MemoryAllocateInfo::default()
             .allocation_size(mem_reqs.size)
             .memory_type_index(mem_type_index);
-        let buffer_memory = unsafe { td.device.allocate_memory(&alloc_info, None) }
-            .expect("allocate_memory");
+        let buffer_memory =
+            unsafe { td.device.allocate_memory(&alloc_info, None) }.expect("allocate_memory");
 
         unsafe { td.device.bind_buffer_memory(buffer, buffer_memory, 0) }
             .expect("bind_buffer_memory");
 
         let data_ptr = unsafe {
-            td.device
-                .map_memory(buffer_memory, 0, buffer_size, ash::vk::MemoryMapFlags::empty())
+            td.device.map_memory(
+                buffer_memory,
+                0,
+                buffer_size,
+                ash::vk::MemoryMapFlags::empty(),
+            )
         }
         .expect("map_memory");
         let keys: &mut [u32] =
@@ -1396,15 +1395,18 @@ mod tests {
 
         sorter
             .dispatch(&ffi::ParallelSortDispatchDescription {
-                commandList: unsafe { ffi::GetCommandListVK(cmd_buffer.as_raw() as usize as *mut ffi::VkCommandBuffer_T) },
+                commandList: unsafe {
+                    ffi::GetCommandListVK(
+                        cmd_buffer.as_raw() as usize as *mut ffi::VkCommandBuffer_T
+                    )
+                },
                 keyBuffer: resource,
                 payloadBuffer: ffi::Resource::default(),
                 numKeysToSort: NUM_KEYS,
             })
             .unwrap();
 
-        unsafe { td.device.end_command_buffer(cmd_buffer) }
-            .expect("end_command_buffer");
+        unsafe { td.device.end_command_buffer(cmd_buffer) }.expect("end_command_buffer");
 
         let cmds = [cmd_buffer];
         let submit_info = ash::vk::SubmitInfo::default().command_buffers(&cmds);

@@ -17,4 +17,4 @@ serial_test = "3"
 
 [build-dependencies]
 cmake = "0.1"
-bindgen = "0.71"
+bindgen = "0.72"

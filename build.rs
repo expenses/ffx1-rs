@@ -98,23 +98,23 @@ fn main() {
     let wrapper_h = std::env::current_dir().unwrap().join("wrapper.h");
 
     use bindgen::EnumVariation;
-    use bindgen::callbacks::{EnumVariantValue, ParseCallbacks};
+    use bindgen::callbacks::{EnumVariantValue, ItemInfo, ParseCallbacks};
 
     #[derive(Debug)]
-    struct StripFfxPrefix;
+    struct Callbacks;
 
-    impl ParseCallbacks for StripFfxPrefix {
-        fn item_name(&self, name: &str) -> Option<String> {
-            if let Some(rest) = name
-                .strip_prefix("Ffx")
-                .filter(|r| r.starts_with(|c: char| c.is_uppercase()))
-            {
+    impl ParseCallbacks for Callbacks {
+        fn item_name(&self, info: ItemInfo) -> Option<String> {
+            match info.name {
+                "FfxResourceDescription__bindgen_ty_1" => return Some("SizeOrWidth".into()),
+                "FfxResourceDescription__bindgen_ty_2" => return Some("HeightOrStride".into()),
+                "FfxResourceDescription__bindgen_ty_3" => return Some("DepthOrAlignment".into()),
+                _ => {}
+            }
+            if let Some(rest) = info.name.strip_prefix("Ffx") {
                 return Some(rest.to_string());
             }
-            if let Some(rest) = name
-                .strip_prefix("ffx")
-                .filter(|r| r.starts_with(|c: char| c.is_uppercase()))
-            {
+            if let Some(rest) = info.name.strip_prefix("ffx") {
                 return Some(rest.to_string());
             }
             None
@@ -126,14 +126,15 @@ fn main() {
             original_variant_name: &str,
             _variant_value: EnumVariantValue,
         ) -> Option<String> {
-            // ErrorCodes has both FFX_EOF and FFX_ERROR_EOF — strip FFX_ so
-            // they become EOF and ERROR_EOF respectively, avoiding a conflict.
+            // ErrorCodes has both FFX_EOF and FFX_ERROR_EOF so we only strip FFX_
             if enum_name == Some("FfxErrorCodes") {
-                return Some(original_variant_name
-                    .strip_prefix("FFX_")
-                    .unwrap().to_string());
+                return Some(
+                    original_variant_name
+                        .strip_prefix("FFX_")
+                        .unwrap()
+                        .to_string(),
+                );
             }
-
             const PREFIXES: &[&str] = &[
                 "FFX_SURFACE_FORMAT_",
                 "FFX_BRIXELIZER_GI_INTERNAL_",
@@ -145,7 +146,8 @@ fn main() {
                 "FFX_BLUR_KERNEL_PERMUTATIONS_",
                 "FFX_DENOISER_",
                 "FFX_CLASSIFIER_",
-                "FFX_FSR3UPSCALER_"
+                "FFX_FSR3UPSCALER_",
+                "FFX_RESOURCE_TYPE_"
             ];
             for p in PREFIXES {
                 if let Some(rest) = original_variant_name.strip_prefix(p) {
@@ -220,7 +222,7 @@ fn main() {
         .bitfield_enum("FfxBlurKernelSize")
         .derive_default(true)
         .generate_comments(true)
-        .parse_callbacks(Box::new(StripFfxPrefix));
+        .parse_callbacks(Box::new(Callbacks));
 
     let bindings = bindgen_builder
         .generate()

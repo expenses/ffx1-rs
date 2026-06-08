@@ -16,28 +16,36 @@ pub const FFX_OK: i32 = 0;
 pub struct FfxError(pub i32);
 
 impl std::fmt::Display for FfxError {
-    #[rustfmt::skip]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            FFX_OK => f.write_str("The operation completed successfully."),
-            x if x == ErrorCodes::ERROR_INVALID_POINTER as i32 => f.write_str("The operation failed due to an invalid pointer."),
-            x if x == ErrorCodes::ERROR_INVALID_ALIGNMENT as i32 => f.write_str("The operation failed due to an invalid alignment."),
-            x if x == ErrorCodes::ERROR_INVALID_SIZE as i32 => f.write_str("The operation failed due to an invalid size."),
-            x if x == ErrorCodes::EOF as i32 => f.write_str("The end of the file was encountered."),
-            x if x == ErrorCodes::ERROR_INVALID_PATH as i32 => f.write_str("The operation failed because the specified path was invalid."),
-            x if x == ErrorCodes::ERROR_EOF as i32 => f.write_str("The operation failed because end of file was reached."),
-            x if x == ErrorCodes::ERROR_MALFORMED_DATA as i32 => f.write_str("The operation failed because of some malformed data."),
-            x if x == ErrorCodes::ERROR_OUT_OF_MEMORY as i32 => f.write_str("The operation failed because it ran out memory."),
-            x if x == ErrorCodes::ERROR_INCOMPLETE_INTERFACE as i32 => f.write_str("The operation failed because the interface was not fully configured."),
-            x if x == ErrorCodes::ERROR_INVALID_ENUM as i32 => f.write_str("The operation failed because of an invalid enumeration value."),
-            x if x == ErrorCodes::ERROR_INVALID_ARGUMENT as i32 => f.write_str("The operation failed because an argument was invalid."),
-            x if x == ErrorCodes::ERROR_OUT_OF_RANGE as i32 => f.write_str("The operation failed because a value was out of range."),
-            x if x == ErrorCodes::ERROR_NULL_DEVICE as i32 => f.write_str("The operation failed because a device was null."),
-            x if x == ErrorCodes::ERROR_BACKEND_API_ERROR as i32 => f.write_str("The operation failed because the backend API returned an error code."),
-            x if x == ErrorCodes::ERROR_INSUFFICIENT_MEMORY as i32 => f.write_str("The operation failed because there was not enough memory."),
-            x if x == ErrorCodes::ERROR_INVALID_VERSION as i32 => f.write_str("The operation failed because the wrong backend was linked."),
-            x if x == ErrorCodes::ERROR_ACCESS_DENIED as i32 => f.write_str("The operation failed because access to the resource was denied."),
-            _ => write!(f, "Unknown FFX error code: {}", self.0),
+        const BASE: u32 = 0x80000000;
+        const MESSAGES: &[&str] = &[
+            "The operation failed due to an invalid pointer.",
+            "The operation failed due to an invalid alignment.",
+            "The operation failed due to an invalid size.",
+            "The end of the file was encountered.",
+            "The operation failed because the specified path was invalid.",
+            "The operation failed because end of file was reached.",
+            "The operation failed because of some malformed data.",
+            "The operation failed because it ran out memory.",
+            "The operation failed because the interface was not fully configured.",
+            "The operation failed because of an invalid enumeration value.",
+            "The operation failed because an argument was invalid.",
+            "The operation failed because a value was out of range.",
+            "The operation failed because a device was null.",
+            "The operation failed because the backend API returned an error code.",
+            "The operation failed because there was not enough memory.",
+            "The operation failed because the wrong backend was linked.",
+            "The operation failed because access to the resource was denied.",
+        ];
+        if self.0 == FFX_OK {
+            f.write_str("The operation completed successfully.")
+        } else {
+            let idx = (self.0 as u32).wrapping_sub(BASE) as usize;
+            if idx < MESSAGES.len() {
+                f.write_str(MESSAGES[idx])
+            } else {
+                write!(f, "Unknown FFX error code: {}", self.0)
+            }
         }
     }
 }

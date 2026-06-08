@@ -640,12 +640,12 @@ impl BackendInterface {
     /// The [`BackendInterface`] must outlive the returned [`Fsr3UpscalerContext`].
     pub fn create_fsr3_upscaler(
         &self,
-        flags: u32,
+        flags: Fsr3UpscalerInitializationFlagBits,
         render_size: Dimensions2D,
         upscale_size: Dimensions2D,
     ) -> Result<Fsr3UpscalerContext, FfxError> {
         let desc = Fsr3UpscalerContextDescription {
-            flags,
+            flags: flags.0,
             maxRenderSize: render_size,
             maxUpscaleSize: upscale_size,
             fpMessage: None,
@@ -657,12 +657,12 @@ impl BackendInterface {
     /// Creates an [`Fsr2Context`] from this backend interface.
     pub fn create_fsr2(
         &self,
-        flags: u32,
+        flags: Fsr2InitializationFlagBits,
         render_size: Dimensions2D,
         display_size: Dimensions2D,
     ) -> Result<Fsr2Context, FfxError> {
         let desc = Fsr2ContextDescription {
-            flags,
+            flags: flags.0,
             maxRenderSize: render_size,
             displaySize: display_size,
             fpMessage: None,
@@ -674,13 +674,13 @@ impl BackendInterface {
     /// Creates an [`Fsr1Context`] from this backend interface.
     pub fn create_fsr1(
         &self,
-        flags: u32,
+        flags: Fsr1InitializationFlagBits,
         output_format: SurfaceFormat,
         render_size: Dimensions2D,
         display_size: Dimensions2D,
     ) -> Result<Fsr1Context, FfxError> {
         let desc = Fsr1ContextDescription {
-            flags,
+            flags: flags.0,
             outputFormat: output_format,
             maxRenderSize: render_size,
             displaySize: display_size,
@@ -692,13 +692,13 @@ impl BackendInterface {
     /// Creates a [`CasContext`] from this backend interface.
     pub fn create_cas(
         &self,
-        flags: u32,
+        flags: CasInitializationFlagBits,
         color_space: CasColorSpaceConversion,
         render_size: Dimensions2D,
         display_size: Dimensions2D,
     ) -> Result<CasContext, FfxError> {
         let desc = CasContextDescription {
-            flags,
+            flags: flags.0,
             colorSpaceConversion: color_space,
             maxRenderSize: render_size,
             displaySize: display_size,
@@ -708,9 +708,10 @@ impl BackendInterface {
     }
 
     /// Creates a [`LpmContext`] from this backend interface.
-    pub fn create_lpm(&self, flags: u32) -> Result<LpmContext, FfxError> {
+    pub fn create_lpm(&self) -> Result<LpmContext, FfxError> {
         let desc = LpmContextDescription {
-            flags,
+            // LpmInitializationFlagBits has no variants
+            flags: 0,
             backendInterface: *self.as_ref(),
         };
         LpmContext::create(&desc)
@@ -719,11 +720,11 @@ impl BackendInterface {
     /// Creates a [`SpdContext`] from this backend interface.
     pub fn create_spd(
         &self,
-        flags: u32,
+        flags: SpdInitializationFlagBits,
         downsample_filter: SpdDownsampleFilter,
     ) -> Result<SpdContext, FfxError> {
         let desc = SpdContextDescription {
-            flags,
+            flags: flags.0,
             downsampleFilter: downsample_filter,
             backendInterface: *self.as_ref(),
         };
@@ -733,12 +734,12 @@ impl BackendInterface {
     /// Creates a [`LensContext`] from this backend interface.
     pub fn create_lens(
         &self,
-        flags: u32,
+        flags: LensInitializationFlagBits,
         output_format: SurfaceFormat,
         float_precision: LensFloatPrecision,
     ) -> Result<LensContext, FfxError> {
         let desc = LensContextDescription {
-            flags,
+            flags: flags.0,
             outputFormat: output_format,
             floatPrecision: float_precision,
             backendInterface: *self.as_ref(),
@@ -765,7 +766,7 @@ impl BackendInterface {
     /// Creates a [`BrixelizerGIContext`] from this backend interface.
     pub fn create_brixelizer_gi(
         &self,
-        flags: u32,
+        flags: BrixelizerGIFlags,
         internal_resolution: BrixelizerGIInternalResolution,
         display_size: Dimensions2D,
     ) -> Result<BrixelizerGIContext, FfxError> {
@@ -781,11 +782,11 @@ impl BackendInterface {
     /// Creates a [`ParallelSortContext`] from this backend interface.
     pub fn create_parallel_sort(
         &self,
-        flags: u32,
+        flags: ParallelSortInitializationFlagBits,
         max_entries: u32,
     ) -> Result<ParallelSortContext, FfxError> {
         let desc = ParallelSortContextDescription {
-            flags,
+            flags: flags.0,
             maxEntries: max_entries,
             backendInterface: *self.as_ref(),
         };
@@ -795,13 +796,13 @@ impl BackendInterface {
     /// Creates a [`DofContext`] from this backend interface.
     pub fn create_dof(
         &self,
-        flags: u32,
+        flags: DofInitializationFlagBits,
         quality: u32,
         resolution: Dimensions2D,
         coc_limit_factor: f32,
     ) -> Result<DofContext, FfxError> {
         let desc = DofContextDescription {
-            flags,
+            flags: flags.0,
             quality,
             resolution,
             cocLimitFactor: coc_limit_factor,
@@ -813,12 +814,12 @@ impl BackendInterface {
     /// Creates a [`SssrContext`] from this backend interface.
     pub fn create_sssr(
         &self,
-        flags: u32,
+        flags: SssrInitializationFlagBits,
         render_size: Dimensions2D,
         normals_format: SurfaceFormat,
     ) -> Result<SssrContext, FfxError> {
         let desc = SssrContextDescription {
-            flags,
+            flags: flags.0,
             renderSize: render_size,
             normalsHistoryBufferFormat: normals_format,
             backendInterface: *self.as_ref(),
@@ -829,11 +830,11 @@ impl BackendInterface {
     /// Creates a [`VrsContext`] from this backend interface.
     pub fn create_vrs(
         &self,
-        flags: u32,
+        flags: VrsInitializationFlagBits,
         shading_rate_tile_size: u32,
     ) -> Result<VrsContext, FfxError> {
         let desc = VrsContextDescription {
-            flags,
+            flags: flags.0,
             shadingRateImageTileSize: shading_rate_tile_size,
             backendInterface: *self.as_ref(),
         };
@@ -843,11 +844,11 @@ impl BackendInterface {
     /// Creates a [`ClassifierContext`] from this backend interface.
     pub fn create_classifier(
         &self,
-        flags: u32,
+        flags: ClassifierInitializationFlagBits,
         resolution: Dimensions2D,
     ) -> Result<ClassifierContext, FfxError> {
         let desc = ClassifierContextDescription {
-            flags,
+            flags: flags.0,
             resolution,
             backendInterface: *self.as_ref(),
         };
@@ -857,12 +858,12 @@ impl BackendInterface {
     /// Creates a [`DenoiserContext`] from this backend interface.
     pub fn create_denoiser(
         &self,
-        flags: u32,
+        flags: DenoiserInitializationFlagBits,
         window_size: Dimensions2D,
         normals_format: SurfaceFormat,
     ) -> Result<DenoiserContext, FfxError> {
         let desc = DenoiserContextDescription {
-            flags,
+            flags: flags.0,
             windowSize: window_size,
             normalsHistoryBufferFormat: normals_format,
             backendInterface: *self.as_ref(),
@@ -873,11 +874,11 @@ impl BackendInterface {
     /// Creates an [`OpticalFlowContext`] from this backend interface.
     pub fn create_optical_flow(
         &self,
-        flags: u32,
+        flags: OpticalflowInitializationFlagBits,
         resolution: Dimensions2D,
     ) -> Result<OpticalFlowContext, FfxError> {
         let desc = OpticalflowContextDescription {
-            flags,
+            flags: flags.0,
             resolution,
             backendInterface: *self.as_ref(),
         };
@@ -887,13 +888,13 @@ impl BackendInterface {
     /// Creates a [`BlurContext`] from this backend interface.
     pub fn create_blur(
         &self,
-        kernel_permutations: BlurKernelPermutations,
-        kernel_sizes: BlurKernelSizes,
+        kernel_permutation: BlurKernelPermutation,
+        kernel_size: BlurKernelSize,
         float_precision: BlurFloatPrecision,
     ) -> Result<BlurContext, FfxError> {
         let desc = BlurContextDescription {
-            kernelPermutations: kernel_permutations,
-            kernelSizes: kernel_sizes,
+            kernelPermutations: kernel_permutation.0,
+            kernelSizes: kernel_size.0,
             floatPrecision: float_precision,
             backendInterface: *self.as_ref(),
         };
@@ -1030,7 +1031,7 @@ fn context_creation() {
     {
         let mut upscaler = backend
             .create_fsr3_upscaler(
-                Fsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING as _,
+                Fsr3UpscalerInitializationFlagBits::FFX_FSR3UPSCALER_ENABLE_DEBUG_CHECKING,
                 Dimensions2D {
                     width: 1280,
                     height: 720,
@@ -1045,17 +1046,22 @@ fn context_creation() {
         dbg!(upscaler.gpu_memory_usage()).unwrap();
     }
 
-    backend.create_lpm(0).unwrap();
+    backend.create_lpm().unwrap();
 
     backend
-        .create_spd(0, SpdDownsampleFilter::FFX_SPD_DOWNSAMPLE_FILTER_MEAN)
+        .create_spd(
+            SpdInitializationFlagBits(0),
+            SpdDownsampleFilter::FFX_SPD_DOWNSAMPLE_FILTER_MEAN,
+        )
         .unwrap();
 
-    backend.create_parallel_sort(0, 1024).unwrap();
+    backend
+        .create_parallel_sort(ParallelSortInitializationFlagBits(0), 1024)
+        .unwrap();
 
     backend
         .create_cas(
-            0,
+            CasInitializationFlagBits(0),
             CasColorSpaceConversion::FFX_CAS_COLOR_SPACE_LINEAR,
             Dimensions2D {
                 width: 1280,
@@ -1070,7 +1076,7 @@ fn context_creation() {
 
     backend
         .create_lens(
-            0,
+            LensInitializationFlagBits(0),
             SurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
             LensFloatPrecision::FFX_LENS_FLOAT_PRECISION_32BIT,
         )
@@ -1078,7 +1084,7 @@ fn context_creation() {
 
     backend
         .create_fsr2(
-            0,
+            Fsr2InitializationFlagBits(0),
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1092,7 +1098,7 @@ fn context_creation() {
 
     backend
         .create_fsr1(
-            0,
+            Fsr1InitializationFlagBits(0),
             SurfaceFormat::FFX_SURFACE_FORMAT_R16G16B16A16_FLOAT,
             Dimensions2D {
                 width: 1280,
@@ -1109,7 +1115,7 @@ fn context_creation() {
 
     backend
         .create_dof(
-            0,
+            DofInitializationFlagBits(0),
             5,
             Dimensions2D {
                 width: 1280,
@@ -1121,7 +1127,7 @@ fn context_creation() {
 
     backend
         .create_sssr(
-            0,
+            SssrInitializationFlagBits(0),
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1130,11 +1136,13 @@ fn context_creation() {
         )
         .unwrap();
 
-    backend.create_vrs(0, 16).unwrap();
+    backend
+        .create_vrs(VrsInitializationFlagBits(0), 16)
+        .unwrap();
 
     backend
         .create_classifier(
-            ClassifierInitializationFlagBits::FFX_CLASSIFIER_SHADOW as _,
+            ClassifierInitializationFlagBits::FFX_CLASSIFIER_SHADOW,
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1144,7 +1152,7 @@ fn context_creation() {
 
     backend
         .create_denoiser(
-            DenoiserInitializationFlagBits::FFX_DENOISER_SHADOWS as _,
+            DenoiserInitializationFlagBits::FFX_DENOISER_SHADOWS,
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1155,7 +1163,7 @@ fn context_creation() {
 
     backend
         .create_optical_flow(
-            0,
+            OpticalflowInitializationFlagBits(0),
             Dimensions2D {
                 width: 1280,
                 height: 720,
@@ -1165,16 +1173,15 @@ fn context_creation() {
 
     backend
         .create_blur(
-            FFX_BLUR_KERNEL_PERMUTATIONS_ALL,
-            BlurKernelSize::FFX_BLUR_KERNEL_SIZE_3x3 as u32
-                | BlurKernelSize::FFX_BLUR_KERNEL_SIZE_5x5 as u32,
+            BlurKernelPermutation(FFX_BLUR_KERNEL_PERMUTATIONS_ALL),
+            BlurKernelSize::FFX_BLUR_KERNEL_SIZE_3x3 | BlurKernelSize::FFX_BLUR_KERNEL_SIZE_5x5,
             BlurFloatPrecision::FFX_BLUR_FLOAT_PRECISION_32BIT,
         )
         .unwrap();
 
     backend
         .create_brixelizer_gi(
-            0,
+            BrixelizerGIFlags(0),
             BrixelizerGIInternalResolution::FFX_BRIXELIZER_GI_INTERNAL_RESOLUTION_NATIVE,
             Dimensions2D {
                 width: 1280,

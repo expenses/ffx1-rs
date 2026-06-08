@@ -156,31 +156,31 @@ fn main() {
         .default_enum_style(EnumVariation::Rust {
             non_exhaustive: false,
         })
-        .constified_enum_module(
-            "FfxResourceUsage\
-            |FfxResourceStates\
-            |FfxBindStage\
-            |FfxFsr3UpscalerInitializationFlagBits\
-            |FfxFsr2InitializationFlagBits\
-            |FfxOpticalflowInitializationFlagBits\
-            |FfxFsr3UpscalerDispatchFlags\
-            |FfxResourceFlags\
-            |FfxCasInitializationFlagBits\
-            |FfxCacaoInitializationFlagBits\
-            |FfxCacaoDispatchFlagsBits\
-            |FfxDofInitializationFlagBits\
-            |FfxLensInitializationFlagBits\
-            |FfxSpdInitializationFlagBits\
-            |FfxVrsInitializationFlagBits\
-            |FfxParallelSortInitializationFlagBits\
-            |FfxDenoiserInitializationFlagBits\
-            |FfxSssrInitializationFlagBits\
-            |FfxClassifierInitializationFlagBits\
-            |FfxBreadcrumbsInitializationFlagBits\
-            |FfxFsr1InitializationFlagBits\
-            |FfxBrixelizerGIFlags\
-            |FfxBrixelizerCascadeFlag",
-        )
+        .bitfield_enum("FfxBlurKernelSize")
+        .bitfield_enum("FfxBlurKernelPermutation")
+        .bitfield_enum("FfxResourceUsage")
+        .bitfield_enum("FfxResourceStates")
+        .bitfield_enum("FfxBindStage")
+        .bitfield_enum("FfxFsr3UpscalerInitializationFlagBits")
+        .bitfield_enum("FfxFsr2InitializationFlagBits")
+        .bitfield_enum("FfxOpticalflowInitializationFlagBits")
+        .bitfield_enum("FfxFsr3UpscalerDispatchFlags")
+        .bitfield_enum("FfxResourceFlags")
+        .bitfield_enum("FfxCasInitializationFlagBits")
+        .bitfield_enum("FfxCacaoInitializationFlagBits")
+        .bitfield_enum("FfxCacaoDispatchFlagsBits")
+        .bitfield_enum("FfxDofInitializationFlagBits")
+        .bitfield_enum("FfxLensInitializationFlagBits")
+        .bitfield_enum("FfxSpdInitializationFlagBits")
+        .bitfield_enum("FfxVrsInitializationFlagBits")
+        .bitfield_enum("FfxParallelSortInitializationFlagBits")
+        .bitfield_enum("FfxDenoiserInitializationFlagBits")
+        .bitfield_enum("FfxSssrInitializationFlagBits")
+        .bitfield_enum("FfxClassifierInitializationFlagBits")
+        .bitfield_enum("FfxBreadcrumbsInitializationFlagBits")
+        .bitfield_enum("FfxFsr1InitializationFlagBits")
+        .bitfield_enum("FfxBrixelizerGIFlags")
+        .bitfield_enum("FfxBrixelizerCascadeFlag")
         .derive_default(true)
         .generate_comments(true)
         .parse_callbacks(Box::new(StripFfxPrefix));

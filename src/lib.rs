@@ -403,7 +403,7 @@ define_context!(
 );
 
 impl BrixelizerGIContext {
-    pub fn dispatch(
+    pub unsafe fn dispatch(
         &mut self,
         desc: &BrixelizerGIDispatchDescription,
         cmd_list: CommandList,
@@ -412,7 +412,7 @@ impl BrixelizerGIContext {
         ok_or_error(code)
     }
 
-    pub fn debug_visualization(
+    pub unsafe fn debug_visualization(
         &mut self,
         desc: &BrixelizerGIDebugDescription,
         cmd_list: CommandList,
@@ -444,7 +444,7 @@ impl BrixelizerContext {
         ok_or_error(code)
     }
 
-    pub fn update(
+    pub unsafe fn update(
         &mut self,
         desc: &mut BrixelizerBakedUpdateDescription,
         scratch_buffer: Resource,
@@ -553,7 +553,7 @@ impl BreadcrumbsContext {
         ok_or_error(code)
     }
 
-    pub fn set_pipeline(
+    pub unsafe fn set_pipeline(
         &mut self,
         command_list: CommandList,
         pipeline: Pipeline,
@@ -562,7 +562,7 @@ impl BreadcrumbsContext {
         ok_or_error(code)
     }
 
-    pub fn begin_marker(
+    pub unsafe fn begin_marker(
         &mut self,
         command_list: CommandList,
         marker_type: BreadcrumbsMarkerType,
@@ -573,7 +573,7 @@ impl BreadcrumbsContext {
         ok_or_error(code)
     }
 
-    pub fn end_marker(&mut self, command_list: CommandList) -> Result<(), FfxError> {
+    pub unsafe fn end_marker(&mut self, command_list: CommandList) -> Result<(), FfxError> {
         let code = unsafe { BreadcrumbsEndMarker(&mut *self.inner, command_list) };
         ok_or_error(code)
     }
@@ -673,13 +673,7 @@ impl BackendInterface {
         &self.inner
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut Interface {
-        &mut self.inner
-    }
-
     /// Creates an [`Fsr3UpscalerContext`] from this backend interface.
-    ///
-    /// The [`BackendInterface`] must outlive the returned [`Fsr3UpscalerContext`].
     pub fn create_fsr3_upscaler(
         &self,
         flags: Fsr3UpscalerInitializationFlagBits,
@@ -998,7 +992,7 @@ unsafe extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate as ffx;
 
     struct TestDevice {
         _entry: ash::Entry,
@@ -1006,7 +1000,7 @@ mod tests {
         device: ash::Device,
         physical_device: ash::vk::PhysicalDevice,
         qfi: u32,
-        ffx_device: Device,
+        ffx_device: ffx::Device,
     }
 
     impl TestDevice {
@@ -1084,7 +1078,7 @@ mod tests {
                     .expect("create_device");
 
                 let ffx_device =
-                    Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _)
+                    ffx::Device::new(device.handle().as_raw() as _, physical_device.as_raw() as _)
                         .expect("Device::new failed");
 
                 Self {
@@ -1118,17 +1112,17 @@ mod tests {
         let td = TestDevice::new();
         assert!(!td.ffx_device.as_raw().is_null());
 
-        let backend = unsafe { BackendInterface::new(&td.ffx_device, 17) }.unwrap();
+        let backend = unsafe { ffx::BackendInterface::new(&td.ffx_device, 17) }.unwrap();
 
         {
             let mut upscaler = backend
                 .create_fsr3_upscaler(
-                    Fsr3UpscalerInitializationFlagBits::ENABLE_DEBUG_CHECKING,
-                    Dimensions2D {
+                    ffx::Fsr3UpscalerInitializationFlagBits::ENABLE_DEBUG_CHECKING,
+                    ffx::Dimensions2D {
                         width: 1280,
                         height: 720,
                     },
-                    Dimensions2D {
+                    ffx::Dimensions2D {
                         width: 1280,
                         height: 720,
                     },
@@ -1141,22 +1135,25 @@ mod tests {
         backend.create_lpm().unwrap();
 
         backend
-            .create_spd(SpdInitializationFlagBits(0), SpdDownsampleFilter::MEAN)
+            .create_spd(
+                ffx::SpdInitializationFlagBits(0),
+                ffx::SpdDownsampleFilter::MEAN,
+            )
             .unwrap();
 
         backend
-            .create_parallel_sort(ParallelSortInitializationFlagBits(0), 1024)
+            .create_parallel_sort(ffx::ParallelSortInitializationFlagBits(0), 1024)
             .unwrap();
 
         backend
             .create_cas(
-                CasInitializationFlagBits(0),
-                CasColorSpaceConversion::LINEAR,
-                Dimensions2D {
+                ffx::CasInitializationFlagBits(0),
+                ffx::CasColorSpaceConversion::LINEAR,
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
-                Dimensions2D {
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1165,20 +1162,20 @@ mod tests {
 
         backend
             .create_lens(
-                LensInitializationFlagBits(0),
-                SurfaceFormat::R16G16B16A16_FLOAT,
-                LensFloatPrecision::PRECISION_32BIT,
+                ffx::LensInitializationFlagBits(0),
+                ffx::SurfaceFormat::R16G16B16A16_FLOAT,
+                ffx::LensFloatPrecision::PRECISION_32BIT,
             )
             .unwrap();
 
         backend
             .create_fsr2(
-                Fsr2InitializationFlagBits(0),
-                Dimensions2D {
+                ffx::Fsr2InitializationFlagBits(0),
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
-                Dimensions2D {
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1187,13 +1184,13 @@ mod tests {
 
         backend
             .create_fsr1(
-                Fsr1InitializationFlagBits(0),
-                SurfaceFormat::R16G16B16A16_FLOAT,
-                Dimensions2D {
+                ffx::Fsr1InitializationFlagBits(0),
+                ffx::SurfaceFormat::R16G16B16A16_FLOAT,
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
-                Dimensions2D {
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1204,9 +1201,9 @@ mod tests {
 
         backend
             .create_dof(
-                DofInitializationFlagBits(0),
+                ffx::DofInitializationFlagBits(0),
                 5,
-                Dimensions2D {
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1216,23 +1213,23 @@ mod tests {
 
         backend
             .create_sssr(
-                SssrInitializationFlagBits(0),
-                Dimensions2D {
+                ffx::SssrInitializationFlagBits(0),
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
-                SurfaceFormat::R16G16B16A16_FLOAT,
+                ffx::SurfaceFormat::R16G16B16A16_FLOAT,
             )
             .unwrap();
 
         backend
-            .create_vrs(VrsInitializationFlagBits(0), 16)
+            .create_vrs(ffx::VrsInitializationFlagBits(0), 16)
             .unwrap();
 
         backend
             .create_classifier(
-                ClassifierInitializationFlagBits::SHADOW,
-                Dimensions2D {
+                ffx::ClassifierInitializationFlagBits::SHADOW,
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1241,19 +1238,19 @@ mod tests {
 
         backend
             .create_denoiser(
-                DenoiserInitializationFlagBits::SHADOWS,
-                Dimensions2D {
+                ffx::DenoiserInitializationFlagBits::SHADOWS,
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
-                SurfaceFormat::R16G16B16A16_FLOAT,
+                ffx::SurfaceFormat::R16G16B16A16_FLOAT,
             )
             .unwrap();
 
         backend
             .create_optical_flow(
-                OpticalflowInitializationFlagBits(0),
-                Dimensions2D {
+                ffx::OpticalflowInitializationFlagBits(0),
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1262,17 +1259,17 @@ mod tests {
 
         backend
             .create_blur(
-                BlurKernelPermutation(FFX_BLUR_KERNEL_PERMUTATIONS_ALL),
-                BlurKernelSize::SIZE_3x3 | BlurKernelSize::SIZE_5x5,
-                BlurFloatPrecision::PRECISION_32BIT,
+                ffx::BlurKernelPermutation(ffx::BLUR_KERNEL_PERMUTATIONS_ALL),
+                ffx::BlurKernelSize::SIZE_3x3 | ffx::BlurKernelSize::SIZE_5x5,
+                ffx::BlurFloatPrecision::PRECISION_32BIT,
             )
             .unwrap();
 
         backend
             .create_brixelizer_gi(
-                BrixelizerGIFlags(0),
-                BrixelizerGIInternalResolution::RESOLUTION_NATIVE,
-                Dimensions2D {
+                ffx::BrixelizerGIFlags(0),
+                ffx::BrixelizerGIInternalResolution::RESOLUTION_NATIVE,
+                ffx::Dimensions2D {
                     width: 1280,
                     height: 720,
                 },
@@ -1280,13 +1277,13 @@ mod tests {
             .unwrap();
 
         {
-            let alloc_callbacks = AllocationCallbacks {
+            let alloc_callbacks = ffx::AllocationCallbacks {
                 fpAlloc: Some(libc::malloc),
                 fpRealloc: Some(libc::realloc),
                 fpFree: Some(libc::free),
             };
             let queue_type: u32 = 0;
-            let _bc = BreadcrumbsContext::create(&BreadcrumbsContextDescription {
+            let _bc = ffx::BreadcrumbsContext::create(&ffx::BreadcrumbsContextDescription {
                 flags: 0,
                 frameHistoryLength: 2,
                 maxMarkersPerMemoryBlock: 1024,
@@ -1307,10 +1304,10 @@ mod tests {
         let num_keys = 2048;
 
         let td = TestDevice::new();
-        let backend = unsafe { BackendInterface::new(&td.ffx_device, 2) }.unwrap();
+        let backend = unsafe { ffx::BackendInterface::new(&td.ffx_device, 2) }.unwrap();
 
         let mut sorter = backend
-            .create_parallel_sort(ParallelSortInitializationFlagBits(0), num_keys)
+            .create_parallel_sort(ffx::ParallelSortInitializationFlagBits(0), num_keys)
             .unwrap();
 
         let buffer_size: u64 = (num_keys as u64) * 4;
@@ -1363,14 +1360,14 @@ mod tests {
             keys[i] = num_keys as u32 - 1 - i as u32;
         }
 
-        let resource = resource_from_vk_buffer(
+        let resource = ffx::resource_from_vk_buffer(
             buffer.as_raw(),
             buffer_size as u32,
             4,
             4,
-            ffi::ResourceFlags::FFX_RESOURCE_FLAGS_NONE,
-            ffi::ResourceUsage::FFX_RESOURCE_USAGE_UAV,
-            ffi::ResourceStates::FFX_RESOURCE_STATE_UNORDERED_ACCESS,
+            ffx::ResourceFlags::NONE,
+            ffx::ResourceUsage::UAV,
+            ffx::ResourceStates::UNORDERED_ACCESS,
             "sort_keys",
         );
 
@@ -1394,10 +1391,10 @@ mod tests {
             .expect("begin_command_buffer");
 
         sorter
-            .dispatch(&ffi::ParallelSortDispatchDescription {
-                commandList: unsafe { ffi::GetCommandListVK(cmd_buffer.as_raw() as *mut _) },
+            .dispatch(&ffx::ParallelSortDispatchDescription {
+                commandList: unsafe { ffx::GetCommandListVK(cmd_buffer.as_raw() as *mut _) },
                 keyBuffer: resource,
-                payloadBuffer: ffi::Resource::default(),
+                payloadBuffer: ffx::Resource::default(),
                 numKeysToSort: num_keys,
             })
             .unwrap();

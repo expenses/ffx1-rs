@@ -117,24 +117,18 @@ fn main() {
             if let Some(rest) = info.name.strip_prefix("ffx") {
                 return Some(rest.to_string());
             }
+            if let Some(rest) = info.name.strip_prefix("FFX_") {
+                return Some(rest.to_string());
+            }
             None
         }
 
         fn enum_variant_name(
             &self,
-            enum_name: Option<&str>,
+            _enum_name: Option<&str>,
             original_variant_name: &str,
             _variant_value: EnumVariantValue,
         ) -> Option<String> {
-            // ErrorCodes has both FFX_EOF and FFX_ERROR_EOF so we only strip FFX_
-            if enum_name == Some("FfxErrorCodes") {
-                return Some(
-                    original_variant_name
-                        .strip_prefix("FFX_")
-                        .unwrap()
-                        .to_string(),
-                );
-            }
             const PREFIXES: &[&str] = &[
                 "FFX_SURFACE_FORMAT_",
                 "FFX_BRIXELIZER_GI_INTERNAL_",
@@ -148,11 +142,17 @@ fn main() {
                 "FFX_CLASSIFIER_",
                 "FFX_FSR3UPSCALER_",
                 "FFX_RESOURCE_TYPE_",
+                "FFX_RESOURCE_FLAGS_",
+                "FFX_RESOURCE_USAGE_",
+                "FFX_RESOURCE_STATE_",
             ];
             for p in PREFIXES {
                 if let Some(rest) = original_variant_name.strip_prefix(p) {
                     return Some(rest.to_string());
                 }
+            }
+            if let Some(rest) = original_variant_name.strip_prefix("FFX_") {
+                return Some(rest.to_string());
             }
             None
         }

@@ -7,7 +7,7 @@ fn main() {
     // Copy the SDK to OUT_DIR before building because the SDK's CMakeLists.txt
     // hardcodes CMAKE_ARCHIVE_OUTPUT_DIRECTORY to the source tree
     if !ffx_src.exists() {
-        copy_dir_all(&Path::new("FidelityFX-SDK-Linux"), &ffx_src)
+        copy_dir_all(Path::new("FidelityFX-SDK-Linux"), &ffx_src)
             .unwrap_or_else(|e| panic!("failed to copy FidelityFX-SDK-Linux to OUT_DIR: {e}"));
     }
     let sdk = ffx_src.join("sdk");
@@ -98,6 +98,28 @@ fn main() {
     let wrapper_h = std::env::current_dir().unwrap().join("wrapper.h");
 
     use bindgen::EnumVariation;
+    use bindgen::callbacks::ParseCallbacks;
+
+    #[derive(Debug)]
+    struct StripFfxPrefix;
+
+    impl ParseCallbacks for StripFfxPrefix {
+        fn item_name(&self, name: &str) -> Option<String> {
+            if let Some(rest) = name
+                .strip_prefix("Ffx")
+                .filter(|r| r.starts_with(|c: char| c.is_uppercase()))
+            {
+                return Some(rest.to_string());
+            }
+            if let Some(rest) = name
+                .strip_prefix("ffx")
+                .filter(|r| r.starts_with(|c: char| c.is_uppercase()))
+            {
+                return Some(rest.to_string());
+            }
+            None
+        }
+    }
 
     let bindgen_builder = bindgen::Builder::default()
         .header(wrapper_h.to_str().unwrap())
@@ -160,7 +182,8 @@ fn main() {
             |FfxBrixelizerCascadeFlag",
         )
         .derive_default(true)
-        .generate_comments(true);
+        .generate_comments(true)
+        .parse_callbacks(Box::new(StripFfxPrefix));
 
     let bindings = bindgen_builder
         .generate()
